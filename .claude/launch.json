@@ -53,7 +53,9 @@
         "--prototypes", "checkpoints/prototypes.pt",
         "--checkpoint", "checkpoints/best.pt",
         "--mask2022", "data/raw/BT2022.gpkg",
-        "--out", "outputs/construction_prob_2024.tif"
+        "--out", "outputs/construction_prob_2024.tif",
+        "--out-gpkg", "outputs/construction_sites_2024.gpkg",
+        "--threshold", "0.5"
       ],
       "port": null
     },
