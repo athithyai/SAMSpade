@@ -4,421 +4,570 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>SamSpade — Construction Detector</title>
-
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
-
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0d1117; --surface: #161b22; --border: #30363d;
+  --accent: #58a6ff; --accent2: #3fb950; --danger: #f85149;
+  --text: #e6edf3; --muted: #8b949e; --pre: #f0883e; --new: #f85149;
+}
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; height: 100vh; overflow: hidden; }
+#map { flex: 1; height: 100vh; }
+#sidebar {
+  width: 340px; min-width: 340px; background: var(--surface);
+  border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto;
+}
+#sidebar header { padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--bg); }
+#sidebar header h1 { font-size: 1.25rem; font-weight: 700; color: var(--accent); }
+#sidebar header p  { font-size: .72rem; color: var(--muted); margin-top: 2px; }
 
-  :root {
-    --bg:       #0d1117;
-    --surface:  #161b22;
-    --border:   #30363d;
-    --accent:   #58a6ff;
-    --accent2:  #3fb950;
-    --danger:   #f85149;
-    --text:     #e6edf3;
-    --muted:    #8b949e;
-    --pre:      #f0883e;
-    --new:      #f85149;
-  }
+.section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.section-title { font-size: .68rem; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
 
-  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; height: 100vh; overflow: hidden; }
+.btn { width: 100%; padding: 9px 14px; border: none; border-radius: 6px; font-size: .84rem; font-weight: 600; cursor: pointer; transition: all .15s; }
+.btn-primary  { background: var(--accent);  color: #000; }
+.btn-primary:hover  { filter: brightness(1.15); }
+.btn-secondary { background: var(--border); color: var(--text); }
+.btn-secondary:hover { background: #40474f; }
+.btn-success  { background: var(--accent2); color: #000; }
+.btn-success:hover  { filter: brightness(1.1); }
+.btn-danger   { background: var(--danger);  color: #fff; }
+.btn:disabled { opacity: .4; cursor: not-allowed; filter: none; }
 
-  /* ── Map ─────────────────────────────── */
-  #map { flex: 1; height: 100vh; }
+/* Mode tabs */
+.mode-tabs { display: flex; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); flex-wrap: wrap; }
+.mode-tab  { flex: 1; padding: 7px 4px; font-size: .76rem; font-weight: 600; border: none; cursor: pointer; transition: background .15s; background: var(--bg); color: var(--muted); min-width: 0; white-space: nowrap; }
+.mode-tab.active { background: var(--accent); color: #000; }
 
-  /* ── Sidebar ─────────────────────────── */
-  #sidebar {
-    width: 320px; min-width: 320px;
-    background: var(--surface);
-    border-left: 1px solid var(--border);
-    display: flex; flex-direction: column;
-    overflow-y: auto;
-  }
+/* Basemap toggle */
+.bm-row { display: flex; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); margin-top: 8px; }
+.bm-btn { flex: 1; padding: 7px; font-size: .78rem; font-weight: 500; border: none; cursor: pointer; transition: background .15s; background: var(--bg); color: var(--muted); }
+.bm-btn.active { background: var(--accent); color: #000; font-weight: 700; }
 
-  #sidebar header {
-    padding: 20px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
-  }
-  #sidebar header h1 { font-size: 1.3rem; font-weight: 700; color: var(--accent); letter-spacing: .5px; }
-  #sidebar header p  { font-size: .75rem; color: var(--muted); margin-top: 3px; }
+.slider-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.slider-row label { font-size: .78rem; color: var(--muted); white-space: nowrap; min-width: 44px; }
+input[type=range] { flex: 1; accent-color: var(--accent); }
+.slider-val { font-size: .78rem; font-weight: 600; color: var(--text); min-width: 36px; text-align: right; }
 
-  .section { padding: 16px; border-bottom: 1px solid var(--border); }
-  .section-title { font-size: .7rem; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+.year-row { display: flex; gap: 8px; margin-top: 10px; }
+.year-row > div { flex: 1; }
+.year-row label { font-size: .72rem; color: var(--muted); display: block; margin-bottom: 3px; }
+.year-row select { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: .82rem; }
 
-  /* Buttons */
-  .btn {
-    width: 100%; padding: 10px 14px; border: none; border-radius: 6px;
-    font-size: .85rem; font-weight: 600; cursor: pointer; transition: all .15s;
-  }
-  .btn-primary  { background: var(--accent);  color: #000; }
-  .btn-primary:hover  { filter: brightness(1.15); }
-  .btn-secondary { background: var(--border); color: var(--text); }
-  .btn-secondary:hover { background: #40474f; }
-  .btn-success  { background: var(--accent2); color: #000; }
-  .btn-success:hover  { filter: brightness(1.1); }
-  .btn:disabled { opacity: .4; cursor: not-allowed; filter: none; }
+/* Run button */
+#run-btn { padding: 12px; font-size: .9rem; position: relative; }
+#run-btn .spinner { display: none; width: 14px; height: 14px; border: 2px solid rgba(0,0,0,.3); border-top-color: #000; border-radius: 50%; animation: spin .6s linear infinite; margin-right: 8px; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#run-btn.loading .spinner { display: inline-block; }
+#run-btn.loading { pointer-events: none; opacity: .7; }
 
-  /* Draw mode indicator */
-  #draw-status { font-size: .75rem; color: var(--muted); margin-top: 8px; text-align: center; min-height: 18px; }
-  #draw-status.active { color: var(--accent); }
+/* Layer toggles */
+.layer-toggles { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.ltog { padding: 5px 10px; border-radius: 20px; font-size: .75rem; font-weight: 600; border: 1px solid var(--border); cursor: pointer; background: var(--bg); color: var(--muted); transition: all .15s; }
+.ltog.active { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,.08); }
 
-  /* Sliders */
-  .slider-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
-  .slider-row label { font-size: .8rem; color: var(--muted); white-space: nowrap; min-width: 80px; }
-  input[type=range] { flex: 1; accent-color: var(--accent); }
-  .slider-val { font-size: .8rem; font-weight: 600; color: var(--text); min-width: 36px; text-align: right; }
+/* Stats */
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.stat-card { background: var(--bg); border-radius: 8px; border: 1px solid var(--border); padding: 10px 12px; }
+.stat-card .val { font-size: 1.35rem; font-weight: 700; }
+.stat-card .lbl { font-size: .68rem; color: var(--muted); margin-top: 2px; }
+.s-constr .val { color: #FF7700; }
+.s-total  .val { color: var(--accent); }
+.s-score  .val { color: var(--accent2); }
+.s-types  .val { color: #a78bfa; font-size: 1rem; }
 
-  /* Year toggle */
-  .year-row { display: flex; gap: 8px; margin-top: 8px; }
-  .year-row select {
-    flex: 1; background: var(--bg); color: var(--text);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 7px 10px; font-size: .83rem;
-  }
-  .year-row label { font-size: .75rem; color: var(--muted); display: block; margin-bottom: 3px; }
+/* Segment label list */
+#label-list { margin-top: 8px; max-height: 140px; overflow-y: auto; }
+.label-row { display: flex; align-items: center; gap: 7px; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: .75rem; }
+.label-row:last-child { border-bottom: none; }
+.label-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.label-name { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.label-count { color: var(--muted); font-size: .7rem; }
 
-  /* Basemap toggle */
-  .basemap-toggle { display: flex; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); margin-top: 8px; }
-  .basemap-toggle button {
-    flex: 1; padding: 7px; font-size: .78rem; font-weight: 500;
-    border: none; cursor: pointer; transition: background .15s;
-    background: var(--bg); color: var(--muted);
-  }
-  .basemap-toggle button.active { background: var(--accent); color: #000; font-weight: 700; }
+/* Draw status */
+#draw-status { font-size: .74rem; color: var(--muted); margin-top: 7px; text-align: center; min-height: 18px; }
+#draw-status.active { color: var(--accent); }
 
-  /* Detect button */
-  #detect-btn { margin-top: 4px; padding: 12px; font-size: .9rem; position: relative; }
-  #detect-btn .spinner {
-    display: none; width: 14px; height: 14px;
-    border: 2px solid rgba(0,0,0,.3);
-    border-top-color: #000;
-    border-radius: 50%; animation: spin .6s linear infinite;
-    margin-right: 8px; vertical-align: middle;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  #detect-btn.loading .spinner { display: inline-block; }
-  #detect-btn.loading { pointer-events: none; opacity: .7; }
+#status-bar { padding: 10px 16px; font-size: .74rem; color: var(--muted); border-top: 1px solid var(--border); margin-top: auto; }
+#status-bar.error { color: var(--danger); }
+#status-bar.ok    { color: var(--accent2); }
 
-  /* Stats */
-  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
-  .stat-card {
-    background: var(--bg); border-radius: 8px; border: 1px solid var(--border);
-    padding: 10px 12px;
-  }
-  .stat-card .val { font-size: 1.4rem; font-weight: 700; }
-  .stat-card .lbl { font-size: .7rem; color: var(--muted); margin-top: 2px; }
-  .stat-pre .val { color: var(--pre); }
-  .stat-new .val { color: var(--new); }
-  .stat-total .val { color: var(--accent); }
-  .stat-prob .val  { color: var(--accent2); }
+/* Text prompts area */
+textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: .74rem; resize: vertical; }
 
-  /* Legend */
-  .legend-item { display: flex; align-items: center; gap: 8px; font-size: .8rem; margin-bottom: 6px; }
-  .legend-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+/* One-shot UI */
+#oneshot-section { display: none; }
+.oneshot-step { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+.oneshot-step-title { font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.oneshot-step.active-step { border-color: var(--accent); }
+.oneshot-step.active-step .oneshot-step-title { color: var(--accent); }
+.oneshot-step.done-step { border-color: var(--accent2); opacity: .7; }
+#ref-preview { width: 100%; border-radius: 6px; margin-top: 8px; display: none; }
+.oneshot-badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: .68rem; font-weight: 700; }
+.badge-encode { background: rgba(88,166,255,.2); color: var(--accent); }
+.badge-ready  { background: rgba(63,185,80,.2); color: var(--accent2); }
 
-  /* Status bar */
-  #status-bar {
-    padding: 10px 16px; font-size: .75rem; color: var(--muted);
-    border-top: 1px solid var(--border); margin-top: auto;
-  }
-  #status-bar.error { color: var(--danger); }
-  #status-bar.ok    { color: var(--accent2); }
+/* Year badge on map */
+#year-badge {
+  position: absolute; bottom: 30px; left: 10px; z-index: 1000;
+  background: rgba(13,17,23,.85); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 12px; font-size: .8rem; font-weight: 700;
+  color: var(--accent); pointer-events: none; backdrop-filter: blur(4px);
+}
 
-  /* Bbox coords display */
-  #bbox-display { font-size: .72rem; color: var(--muted); margin-top: 8px; font-family: monospace; word-break: break-all; min-height: 18px; }
-
-  /* Layer opacity slider */
-  #opacity-row { margin-top: 10px; }
+/* Map legend */
+.leaflet-legend {
+  background: rgba(13,17,23,.9); border: 1px solid #30363d;
+  border-radius: 8px; padding: 10px 12px; font-size: .72rem;
+  color: #e6edf3; min-width: 160px; backdrop-filter: blur(4px);
+  max-height: 280px; overflow-y: auto;
+}
+.legend-title { font-weight: 700; color: #58a6ff; margin-bottom: 6px; font-size: .74rem; }
+.legend-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.legend-label { font-size: .7rem; color: #c9d1d9; }
 </style>
 </head>
 <body>
-
 <div id="map"></div>
+<!-- Year badge overlaid on map -->
+<div id="year-badge">📡 2024</div>
 
 <div id="sidebar">
   <header>
     <h1>⬡ SamSpade</h1>
-    <p>Zero-shot construction site detector · Netherlands</p>
+    <p>SAM2 + CLIP zero-shot construction detector · Netherlands</p>
   </header>
 
   <!-- BASEMAP -->
   <div class="section">
     <div class="section-title">Aerial Imagery</div>
-    <div class="basemap-toggle">
-      <button id="bm-2024" class="active" onclick="setBasemap(2024)">2024</button>
-      <button id="bm-2022" onclick="setBasemap(2022)">2022</button>
-      <button id="bm-topo" onclick="setBasemap('topo')">Topo</button>
+    <div class="bm-row">
+      <button class="bm-btn active" id="bm-2024" onclick="setBasemap(2024)">2024</button>
+      <button class="bm-btn" id="bm-2022" onclick="setBasemap(2022)">2022</button>
+      <button class="bm-btn" id="bm-topo" onclick="setBasemap('topo')">Topo</button>
     </div>
-    <div class="slider-row" style="margin-top:10px;" id="blend-row">
+    <div class="slider-row" id="blend-row" style="margin-top:10px;">
       <label>2022</label>
-      <input type="range" id="blend-slider" min="0" max="100" value="100"
-             oninput="onBlend(this.value)"/>
+      <input type="range" id="blend-slider" min="0" max="100" value="100" oninput="onBlend(this.value)"/>
       <label>2024</label>
     </div>
-    <div style="font-size:.7rem;color:var(--muted);margin-top:4px;text-align:center" id="blend-label">Showing: 2024</div>
+    <div style="font-size:.68rem;color:var(--muted);margin-top:3px;text-align:center" id="blend-label">Showing: 2024</div>
   </div>
 
-  <!-- DRAW + YEARS -->
+  <!-- MODE -->
   <div class="section">
-    <div class="section-title">Area Selection</div>
-    <div style="display:flex;gap:6px;">
-      <button class="btn btn-secondary" id="draw-rect-btn" style="flex:1" onclick="toggleDraw('rect')">📐 Rectangle</button>
-      <button class="btn btn-secondary" id="draw-poly-btn" style="flex:1" onclick="toggleDraw('poly')">✏ Polygon</button>
+    <div class="section-title">Detection Mode</div>
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="mode-seg"     onclick="setMode('seg')">📐 Auto Seg</button>
+      <button class="mode-tab"        id="mode-det"     onclick="setMode('det')">🔥 Change</button>
+      <button class="mode-tab"        id="mode-text"    onclick="setMode('text')">✏ Text</button>
+      <button class="mode-tab"        id="mode-oneshot" onclick="setMode('oneshot')">🎯 One-Shot</button>
     </div>
-    <div id="draw-status" style="margin-top:8px;">Draw a rectangle (dense scan) or polygon (SAM objects)</div>
+    <div style="margin-top:10px">
+      <button class="btn btn-primary" id="draw-btn" onclick="handleDrawBtn()" style="background:#1f6feb;">✏ Draw Area on Map</button>
+    </div>
+    <div id="draw-status" style="margin-top:8px;font-size:.78rem;color:#f0883e;font-weight:600;">← Click above to start drawing</div>
+  </div>
 
-    <div class="year-row" style="margin-top:14px;">
+  <!-- ONE-SHOT UI -->
+  <div class="section" id="oneshot-section">
+    <div class="section-title">One-Shot Reference Search</div>
+    <div class="oneshot-step" id="step-encode" class="active-step">
+      <div class="oneshot-step-title">Step 1 — Encode Reference</div>
+      <div style="font-size:.74rem;color:var(--muted);margin-bottom:8px;">Draw a small area around one example site. SAM2 will encode its appearance.</div>
+      <button class="btn btn-secondary" id="draw-ref-btn" onclick="startDrawRef()" style="font-size:.8rem;padding:7px;">✏ Draw Reference Area</button>
+      <img id="ref-preview" alt="Reference thumbnail"/>
+      <div id="ref-status" style="font-size:.72rem;color:var(--muted);margin-top:6px;"></div>
+    </div>
+    <div class="oneshot-step" id="step-search">
+      <div class="oneshot-step-title">Step 2 — Search in Larger Area</div>
+      <div style="font-size:.74rem;color:var(--muted);margin-bottom:8px;">Draw a larger search bbox. SAM2 will find patches similar to the reference.</div>
+      <button class="btn btn-primary" id="draw-search-btn" onclick="startDrawSearch()" style="font-size:.8rem;padding:7px;" disabled>✏ Draw Search Area</button>
+    </div>
+    <div class="slider-row" style="margin-top:8px;">
+      <label>Similarity threshold</label>
+      <input type="range" id="oneshot-threshold" min="0.2" max="0.8" step="0.05" value="0.45"
+             oninput="document.getElementById('ost-val').textContent=parseFloat(this.value).toFixed(2)"/>
+      <span class="slider-val" id="ost-val">0.45</span>
+    </div>
+  </div>
+
+  <!-- TEXT PROMPTS (text mode only) -->
+  <div class="section" id="text-prompts-section" style="display:none;">
+    <div class="section-title">Text Prompts (Grounding DINO)</div>
+    <textarea id="text-prompts" rows="3">crane . scaffolding . excavator . dump truck . building under construction . concrete mixer</textarea>
+    <div style="font-size:.68rem;color:var(--muted);margin-top:4px;">Separate with " . " — DINO format</div>
+  </div>
+
+  <!-- YEAR SELECTION -->
+  <div class="section">
+    <div class="section-title">Year Settings</div>
+    <div class="year-row">
       <div>
         <label>Reference year</label>
         <select id="year-a"><option value="2022" selected>2022</option><option value="2023">2023</option></select>
       </div>
       <div>
         <label>Detection year</label>
-        <select id="year-b"><option value="2024" selected>2024</option><option value="2023">2023</option></select>
+        <select id="year-b" onchange="updateYearBadge()"><option value="2024" selected>2024</option><option value="2023">2023</option></select>
       </div>
     </div>
-  </div>
-
-  <!-- TEXT PROMPTS (shown only for polygon mode) -->
-  <div class="section" id="text-prompts-section" style="display:none;">
-    <div class="section-title">Text Prompts</div>
-    <textarea id="text-prompts" rows="3"
-      style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:.75rem;resize:vertical;"
-    >crane . scaffolding . excavator . dump truck . building under construction . concrete mixer</textarea>
-    <div style="font-size:.7rem;color:var(--muted);margin-top:4px;">Separate objects with " . " (Grounding DINO format)</div>
-  </div>
-
-  <!-- THRESHOLD -->
-  <div class="section">
-    <div class="section-title">Detection Settings</div>
-    <div class="slider-row">
+    <div class="slider-row" style="margin-top:10px;">
       <label>Threshold</label>
       <input type="range" id="threshold" min="0.1" max="0.7" step="0.05" value="0.30"
              oninput="document.getElementById('thresh-val').textContent=parseFloat(this.value).toFixed(2)"/>
       <span class="slider-val" id="thresh-val">0.30</span>
     </div>
-    <div class="slider-row" id="opacity-row">
-      <label>Heatmap</label>
-      <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.65"
-             oninput="setOverlayOpacity(this.value)"/>
-      <span class="slider-val" id="opacity-val">0.65</span>
-    </div>
   </div>
 
-  <!-- DETECT -->
-  <div class="section">
-    <button class="btn btn-primary" id="detect-btn" onclick="runDetection()">
+  <!-- RUN -->
+  <div class="section" id="run-section">
+    <button class="btn btn-primary" id="run-btn" onclick="runAnalysis()" disabled>
       <span class="spinner"></span>
-      <span id="detect-label">Detect Construction Sites</span>
+      <span id="run-label">Draw an area first</span>
     </button>
+    <div class="layer-toggles" id="layer-toggles" style="display:none;">
+      <button class="ltog active" id="tog-seg"  onclick="toggleLayer('seg')">Segments</button>
+      <button class="ltog active" id="tog-heat" onclick="toggleLayer('heat')">Heatmap</button>
+    </div>
+    <div class="slider-row" id="opacity-row" style="display:none;">
+      <label>Heatmap α</label>
+      <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.6"
+             oninput="setOverlayOpacity(this.value)"/>
+      <span class="slider-val" id="opacity-val">0.60</span>
+    </div>
   </div>
 
   <!-- RESULTS -->
   <div class="section" id="results-section" style="display:none;">
     <div class="section-title">Results</div>
     <div class="stats-grid">
-      <div class="stat-card stat-pre">
-        <div class="val" id="stat-pre">0</div>
-        <div class="lbl">Preexisting</div>
+      <div class="stat-card s-constr">
+        <div class="val" id="stat-constr">0</div>
+        <div class="lbl">Construction</div>
       </div>
-      <div class="stat-card stat-new">
-        <div class="val" id="stat-new">0</div>
-        <div class="lbl">New sites</div>
-      </div>
-      <div class="stat-card stat-total">
+      <div class="stat-card s-total">
         <div class="val" id="stat-total">0</div>
-        <div class="lbl">Total</div>
+        <div class="lbl">Total segments</div>
       </div>
-      <div class="stat-card stat-prob">
-        <div class="val" id="stat-prob">—</div>
+      <div class="stat-card s-types">
+        <div class="val" id="stat-types">—</div>
+        <div class="lbl">Top type</div>
+      </div>
+      <div class="stat-card s-score">
+        <div class="val" id="stat-score">—</div>
         <div class="lbl">Max score</div>
       </div>
     </div>
-    <button class="btn btn-success" style="margin-top:12px;" onclick="downloadGPKG()">
-      ⬇ Download GeoPackage
-    </button>
+    <div id="label-list"></div>
+    <button class="btn btn-success" style="margin-top:10px;" onclick="downloadGPKG()">⬇ Download GeoPackage</button>
   </div>
 
-  <!-- LEGEND -->
-  <div class="section">
-    <div class="section-title">Legend</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#f0883e;"></div> Preexisting (was construction in 2022)</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#f85149;"></div> New (appeared after 2022)</div>
-    <div class="legend-item"><div class="legend-dot" style="background:rgba(255,80,0,.5); border-radius:2px; width:14px; height:10px;"></div> Probability heatmap</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#40a9ff; opacity:.5; border-radius:2px; width:14px; height:10px;"></div> 2022 construction mask</div>
-  </div>
-
-  <div id="status-bar">Initialising model…</div>
+  <div id="status-bar">Initialising models…</div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script>
-// ── Map setup ──────────────────────────────────────────────────────────────────
+// ── CLIP labels + colors (mirrors server) ─────────────────────────────────────
+const CLIP_LABELS = [
+  "construction site with cranes and machinery",
+  "building under construction concrete frame",
+  "excavation pit earthwork foundation",
+  "scaffolding on building facade",
+  "demolition site rubble and debris",
+  "concrete pour steel structure being built",
+  "road asphalt pavement",
+  "parking lot with vehicles",
+  "residential house rooftops",
+  "office or commercial building roof",
+  "industrial warehouse factory roof",
+  "green vegetation trees park grass",
+  "water canal river pond",
+  "bare soil gravel sand field",
+];
+const LABEL_COLORS = [
+  "#FF3333","#FF7700","#FFD700","#FF66AA","#CC3300","#FF9944",
+  "#778899","#9999BB","#88CC88","#66AACC","#AAAACC",
+  "#44AA44","#4488FF","#CCAA66",
+];
+const CONSTRUCTION_COUNT = 6;  // labels 0-5
+
+// ── Map ─────────────────────────────────────────────────────────────────────
 const map = L.map('map', { center: [52.25, 5.30], zoom: 9 });
-
-// PDOK layers — matching reference: jpeg, ortho25, proper topo WMTS
-const PDOK_WMS  = 'https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0';
-const wmsOpts   = { format: 'image/jpeg', transparent: false, version: '1.3.0', maxZoom: 21, tileSize: 256 };
-
+const PDOK_WMS = 'https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0';
+const wmsOpts  = { format: 'image/jpeg', transparent: false, version: '1.3.0', maxZoom: 21, tileSize: 256 };
 const WMS_2022 = L.tileLayer.wms(PDOK_WMS, { ...wmsOpts, layers: '2022_ortho25', attribution: '© PDOK 2022' });
 const WMS_2024 = L.tileLayer.wms(PDOK_WMS, { ...wmsOpts, layers: '2024_ortho25', attribution: '© PDOK 2024' });
-const TOPO     = L.tileLayer(
-  'https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png',
-  { attribution: '© Kadaster / PDOK', maxZoom: 19 }
-);
-
-let currentBasemap = 2024;
+const TOPO     = L.tileLayer('https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png', { attribution: '© Kadaster', maxZoom: 19 });
 WMS_2024.addTo(map);
+
+// ── Year badge ───────────────────────────────────────────────────────────────
+function updateYearBadge() {
+  const yr = document.getElementById('year-b').value;
+  document.getElementById('year-badge').textContent = `📡 ${yr}`;
+}
 
 function setBasemap(year) {
   [WMS_2022, WMS_2024, TOPO].forEach(l => map.removeLayer(l));
-  currentBasemap = year;
-  document.querySelectorAll('.basemap-toggle button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.bm-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(year === 'topo' ? 'bm-topo' : `bm-${year}`).classList.add('active');
   const blendRow = document.getElementById('blend-row');
+  const badge    = document.getElementById('year-badge');
   if (year === 'topo') {
     TOPO.addTo(map);
     blendRow.style.display = 'none';
+    badge.textContent = '📡 Topo';
   } else {
-    // reset blend to chosen year
     document.getElementById('blend-slider').value = year === 2024 ? 100 : 0;
     onBlend(year === 2024 ? 100 : 0);
     blendRow.style.display = 'flex';
   }
 }
-
 function onBlend(v) {
   const t = parseInt(v) / 100;
   if (!map.hasLayer(WMS_2022)) WMS_2022.addTo(map);
   if (!map.hasLayer(WMS_2024)) WMS_2024.addTo(map);
   WMS_2022.setOpacity(1 - t);
   WMS_2024.setOpacity(t);
-  const domYr = t > 0.5 ? 2024 : 2022;
-  document.getElementById('blend-label').textContent =
-    t === 0 ? 'Showing: 2022' : t === 1 ? 'Showing: 2024' : `Blending: ${Math.round(t*100)}% → 2024`;
-  document.getElementById('bm-2024').classList.toggle('active', domYr === 2024);
-  document.getElementById('bm-2022').classList.toggle('active', domYr === 2022);
-  currentBasemap = domYr;
+  const badge = document.getElementById('year-badge');
+  const lbl   = document.getElementById('blend-label');
+  if (t === 0)       { lbl.textContent = 'Showing: 2022'; badge.textContent = '📡 2022'; }
+  else if (t === 1)  { lbl.textContent = 'Showing: 2024'; badge.textContent = '📡 2024'; }
+  else               { lbl.textContent = `Blend ${Math.round(t*100)}% → 2024`; badge.textContent = `📡 2022↔2024`; }
 }
 
-// ── Draw tool ──────────────────────────────────────────────────────────────────
-const drawnItems = new L.FeatureGroup().addTo(map);
-let drawMode = false;
-let drawType = 'rect';   // 'rect' | 'poly'
-let currentBbox = null;
-let currentPolygon = null;
-let drawHandler = null;
-
-function toggleDraw(type) {
-  if (drawHandler) { drawHandler.disable(); drawHandler = null; }
-  if (drawMode && drawType === type) {
-    drawMode = false;
-    document.getElementById('draw-status').textContent = 'Draw a rectangle (dense scan) or polygon (SAM objects)';
-    document.getElementById('draw-status').classList.remove('active');
-    return;
+// ── Leaflet legend control ────────────────────────────────────────────────────
+const Legend = L.Control.extend({
+  options: { position: 'bottomright' },
+  onAdd() {
+    const div = L.DomUtil.create('div', 'leaflet-legend');
+    div.innerHTML = `
+      <div class="legend-title">CLIP Labels</div>
+      <div class="legend-row"><span class="legend-dot" style="border:2px solid #f0883e;background:rgba(240,136,62,.3)"></span><span class="legend-label">🟠 Preexisting site</span></div>
+      <div class="legend-row"><span class="legend-dot" style="border:2px solid #f85149;background:rgba(248,81,73,.3)"></span><span class="legend-label">🔴 New site</span></div>
+      <div style="border-top:1px solid #30363d;margin:5px 0;"></div>
+      ${CLIP_LABELS.map((lbl, i) => `
+        <div class="legend-row">
+          <span class="legend-dot" style="background:${LABEL_COLORS[i]};${i < CONSTRUCTION_COUNT ? 'border:1px solid rgba(255,255,255,.4)' : ''}"></span>
+          <span class="legend-label" style="${i < CONSTRUCTION_COUNT ? 'font-weight:600' : ''}">${lbl.split(' ').slice(0,3).join(' ')}</span>
+        </div>`).join('')}
+    `;
+    L.DomEvent.disableClickPropagation(div);
+    return div;
   }
-  drawType = type;
-  drawMode = true;
-  document.getElementById('text-prompts-section').style.display = type === 'poly' ? 'block' : 'none';
-  document.getElementById('detect-label').textContent = type === 'poly' ? 'Segment with SAM + Text' : 'Detect Construction Sites';
+});
+new Legend().addTo(map);
 
-  const opts = { shapeOptions: { color: type === 'poly' ? '#f0883e' : '#58a6ff', weight: 2, fillOpacity: .08 } };
-  drawHandler = type === 'rect'
-    ? new L.Draw.Rectangle(map, opts)
-    : new L.Draw.Polygon(map, opts);
-  drawHandler.enable();
-  document.getElementById('draw-status').textContent = type === 'rect'
-    ? 'Drag to select area (dense detection)…'
-    : 'Click vertices to draw polygon (SAM segmentation)…';
-  document.getElementById('draw-status').classList.add('active');
+// ── Mode ────────────────────────────────────────────────────────────────────
+let currentMode = 'seg';
+function setMode(m) {
+  currentMode = m;
+  document.querySelectorAll('.mode-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById(`mode-${m}`).classList.add('active');
+  document.getElementById('text-prompts-section').style.display  = m === 'text'    ? 'block' : 'none';
+  document.getElementById('oneshot-section').style.display       = m === 'oneshot' ? 'block' : 'none';
+  document.getElementById('run-section').style.display           = m === 'oneshot' ? 'none'  : 'block';
+  const labels = { seg: '▶ Auto Segment + Classify', det: '▶ Detect Changes (2022→2024)', text: '▶ Text-Guided SAM' };
+  if (m !== 'oneshot') {
+    document.getElementById('run-label').textContent = currentBbox ? labels[m] : 'Draw an area first';
+    document.getElementById('draw-btn').textContent = '✏ Draw Area on Map';
+    document.getElementById('draw-btn').onclick = handleDrawBtn;
+    if (!currentBbox) startDraw();
+  } else {
+    // One-shot mode: draw button drives step 1
+    document.getElementById('draw-btn').textContent = '✏ Draw Reference Area';
+    document.getElementById('draw-btn').onclick = startDrawRef;
+  }
 }
 
-map.on(L.Draw.Event.CREATED, e => {
+// ── Draw ────────────────────────────────────────────────────────────────────
+const drawnItems = new L.FeatureGroup().addTo(map);
+let currentBbox = null, currentPolygon = null, drawHandler = null;
+let oneShotStep = 'encode';   // 'encode' | 'search'
+let refBbox = null;
+
+function handleDrawBtn() { startDraw(); }
+
+function startDraw() {
+  if (drawHandler) { drawHandler.disable(); drawHandler = null; }
+  const isPoly = currentMode === 'text';
+  const opts = { shapeOptions: { color: '#58a6ff', weight: 2, fillOpacity: .07 } };
+  drawHandler = isPoly ? new L.Draw.Polygon(map, opts) : new L.Draw.Rectangle(map, opts);
+  drawHandler.enable();
+  const msg = isPoly ? '🖱 Click vertices on the map to draw polygon…' : '🖱 Drag a rectangle on the map…';
+  setDrawStatus(msg, 'active');
+}
+
+function startDrawRef() {
+  oneShotStep = 'encode';
+  if (drawHandler) { drawHandler.disable(); drawHandler = null; }
+  const opts = { shapeOptions: { color: '#58a6ff', weight: 2, fillOpacity: .10 } };
+  drawHandler = new L.Draw.Rectangle(map, opts);
+  drawHandler.enable();
+  setDrawStatus('🖱 Draw small reference area…', 'active');
+  document.getElementById('draw-btn').textContent = '🔄 Drawing reference…';
+}
+
+function startDrawSearch() {
+  oneShotStep = 'search';
+  if (drawHandler) { drawHandler.disable(); drawHandler = null; }
+  const opts = { shapeOptions: { color: '#3fb950', weight: 2.5, fillOpacity: .07 } };
+  drawHandler = new L.Draw.Rectangle(map, opts);
+  drawHandler.enable();
+  setDrawStatus('🖱 Draw large search area…', 'active');
+}
+
+function setDrawStatus(msg, cls = '') {
+  const el = document.getElementById('draw-status');
+  el.textContent = msg;
+  el.className = cls;
+}
+
+map.on(L.Draw.Event.CREATED, async e => {
   drawnItems.clearLayers();
   drawnItems.addLayer(e.layer);
-  drawMode = false; drawHandler = null;
+  drawHandler = null;
+  const b = e.layer.getBounds();
+  const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
 
-  if (drawType === 'rect') {
-    const b = e.layer.getBounds();
-    currentBbox    = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-    currentPolygon = null;
-  } else {
-    const latlngs  = e.layer.getLatLngs()[0];
-    const coords   = latlngs.map(ll => [ll.lng, ll.lat]);
-    coords.push(coords[0]);  // close ring
-    currentPolygon = { type: 'Polygon', coordinates: [coords] };
-    const b = e.layer.getBounds();
-    currentBbox    = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+  if (currentMode === 'oneshot') {
+    if (oneShotStep === 'encode') {
+      refBbox = bbox;
+      setDrawStatus('⏳ Encoding reference…', '');
+      document.getElementById('draw-ref-btn').disabled = true;
+      try {
+        const year = parseInt(document.getElementById('year-b').value);
+        const data = await apiPost('/api/encode-reference', { bbox_wgs84: refBbox, year });
+        // Show thumbnail
+        const img = document.getElementById('ref-preview');
+        img.src = data.preview;
+        img.style.display = 'block';
+        document.getElementById('ref-status').textContent = '✓ Reference encoded';
+        document.getElementById('ref-status').style.color = '#3fb950';
+        document.getElementById('step-encode').style.borderColor = '#3fb950';
+        document.getElementById('step-search').style.borderColor = '#58a6ff';
+        document.getElementById('draw-search-btn').disabled = false;
+        document.getElementById('draw-btn').textContent = '✏ Draw Search Area';
+        document.getElementById('draw-btn').onclick = startDrawSearch;
+        setDrawStatus('Reference ready — now draw search area', '');
+        setStatus('Reference encoded ✓ — draw search area', 'ok');
+      } catch(err) {
+        document.getElementById('ref-status').textContent = '✗ ' + err.message;
+        document.getElementById('ref-status').style.color = '#f85149';
+        document.getElementById('draw-ref-btn').disabled = false;
+        setDrawStatus('Encode failed — try again', '');
+        setStatus('Error: ' + err.message, 'error');
+      }
+    } else {
+      // Step 2: search
+      currentBbox = bbox;
+      runOneShotSearch();
+    }
+    return;
   }
 
-  document.getElementById('draw-status').textContent = '✓ Area selected — press Detect';
-  document.getElementById('draw-status').classList.remove('active');
-  document.getElementById('detect-btn').disabled = false;
+  // Standard modes
+  currentBbox = bbox;
+  if (currentMode === 'text') {
+    const ll = e.layer.getLatLngs()[0];
+    const coords = ll.map(p => [p.lng, p.lat]); coords.push(coords[0]);
+    currentPolygon = { type: 'Polygon', coordinates: [coords] };
+  } else { currentPolygon = null; }
+
+  setDrawStatus('✓ Area selected — press Run', '');
+  const labels = { seg: 'Auto Segment + Classify', det: 'Detect Changes (2022→2024)', text: 'Text-Guided SAM' };
+  document.getElementById('run-label').textContent = labels[currentMode];
+  document.getElementById('run-btn').disabled = false;
 });
 
-// ── Result layers ──────────────────────────────────────────────────────────────
-let heatmapLayer  = null;
-let polygonLayer  = null;
-let mask2022Layer = null;
-let overlayOpacity = 0.65;
-
-function setOverlayOpacity(v) {
-  overlayOpacity = parseFloat(v);
-  document.getElementById('opacity-val').textContent = parseFloat(v).toFixed(2);
-  if (heatmapLayer) heatmapLayer.setOpacity(overlayOpacity);
+// ── One-shot search ──────────────────────────────────────────────────────────
+async function runOneShotSearch() {
+  const btn = document.getElementById('draw-search-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Searching…';
+  if (segmentLayer) { map.removeLayer(segmentLayer); segmentLayer = null; }
+  if (heatmapLayer) { map.removeLayer(heatmapLayer); heatmapLayer = null; }
+  try {
+    setStatus('One-shot: downloading search tile → cosine similarity…');
+    const year = parseInt(document.getElementById('year-b').value);
+    const thr  = parseFloat(document.getElementById('oneshot-threshold').value);
+    const data = await apiPost('/api/one-shot-search', { bbox_wgs84: currentBbox, year, threshold: thr });
+    renderOneShot(data);
+    setStatus(`${data.stats.n_matches} matches · max similarity ${(data.stats.max_sim*100).toFixed(0)}%`, 'ok');
+  } catch(err) {
+    setStatus('Error: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✏ Draw Search Area';
+  }
 }
 
-// ── Detection ──────────────────────────────────────────────────────────────────
-document.getElementById('detect-btn').disabled = true;
+// ── Layers ──────────────────────────────────────────────────────────────────
+let segmentLayer = null, heatmapLayer = null;
+let showSeg = true, showHeat = true;
 
-async function runDetection() {
+function toggleLayer(which) {
+  if (which === 'seg') {
+    showSeg = !showSeg;
+    document.getElementById('tog-seg').classList.toggle('active', showSeg);
+    if (segmentLayer) { if (showSeg) segmentLayer.addTo(map); else map.removeLayer(segmentLayer); }
+  } else {
+    showHeat = !showHeat;
+    document.getElementById('tog-heat').classList.toggle('active', showHeat);
+    if (heatmapLayer) { if (showHeat) heatmapLayer.addTo(map); else map.removeLayer(heatmapLayer); }
+  }
+}
+function setOverlayOpacity(v) {
+  document.getElementById('opacity-val').textContent = parseFloat(v).toFixed(2);
+  if (heatmapLayer) heatmapLayer.setOpacity(parseFloat(v));
+}
+
+// ── Run ─────────────────────────────────────────────────────────────────────
+async function runAnalysis() {
   if (!currentBbox) { setStatus('Draw an area first.', 'error'); return; }
-
-  const btn = document.getElementById('detect-btn');
+  const btn = document.getElementById('run-btn');
   btn.classList.add('loading');
-  setStatus(drawType === 'poly' ? 'Running Grounding DINO + SAM2…' : 'Fetching tiles & running SAM2…');
+  if (segmentLayer) { map.removeLayer(segmentLayer); segmentLayer = null; }
+  if (heatmapLayer) { map.removeLayer(heatmapLayer); heatmapLayer = null; }
+
+  const yearB = parseInt(document.getElementById('year-b').value);
+  const yearA = parseInt(document.getElementById('year-a').value);
 
   try {
-    let res, data;
+    if (currentMode === 'seg') {
+      setStatus('Downloading tile → SAM2 auto-segment → CLIP classify…');
+      const data = await apiPost('/api/auto-segment', { bbox_wgs84: currentBbox, year: yearB });
+      renderSegments(data);
+      setStatus(`${data.stats.construction} construction / ${data.stats.total} total segments`, 'ok');
 
-    if (drawType === 'poly' && currentPolygon) {
-      // ── SAM + text segmentation ──
-      res = await fetch('/api/segment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          polygon_wgs84: currentPolygon,
-          text_prompts: document.getElementById('text-prompts').value,
-          box_threshold: 0.25,
-          text_threshold: 0.25,
-          year_b: parseInt(document.getElementById('year-b').value),
-        })
+    } else if (currentMode === 'det') {
+      setStatus('Fetching 2022+2024 tiles → SAM2+CLIP+Depth+NDVI change detect…');
+      const data = await apiPost('/api/detect', {
+        bbox_wgs84: currentBbox,
+        threshold: parseFloat(document.getElementById('threshold').value),
+        year_a: yearA, year_b: yearB,
       });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.detail || res.statusText); }
-      data = await res.json();
-      renderSegmentResults(data);
-      setStatus(`SAM found ${data.stats.total} object(s).`, 'ok');
-    } else {
-      // ── Dense detection ──
-      res = await fetch('/api/detect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bbox_wgs84: currentBbox,
-          threshold: parseFloat(document.getElementById('threshold').value),
-          year_a: parseInt(document.getElementById('year-a').value),
-          year_b: parseInt(document.getElementById('year-b').value),
-        })
+      renderDetection(data);
+      setStatus(`${data.stats.total} sites · max score ${(data.stats.max_prob*100).toFixed(0)}%`, 'ok');
+
+    } else if (currentMode === 'text') {
+      setStatus('Grounding DINO + SAM2 text-guided segmentation…');
+      const poly = currentPolygon || { type: 'Polygon', coordinates: [[
+        [currentBbox[0], currentBbox[1]], [currentBbox[2], currentBbox[1]],
+        [currentBbox[2], currentBbox[3]], [currentBbox[0], currentBbox[3]],
+        [currentBbox[0], currentBbox[1]]
+      ]]};
+      const data = await apiPost('/api/segment', {
+        polygon_wgs84: poly,
+        text_prompts: document.getElementById('text-prompts').value,
+        box_threshold: 0.20, text_threshold: 0.20, year_b: yearB,
       });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.detail || res.statusText); }
-      data = await res.json();
-      renderResults(data);
-      setStatus(`Done — ${data.stats.total} construction site(s) detected.`, 'ok');
+      renderTextSeg(data);
+      setStatus(`${data.stats.total} object(s) detected`, 'ok');
     }
   } catch (e) {
     setStatus('Error: ' + e.message, 'error');
@@ -427,150 +576,233 @@ async function runDetection() {
   }
 }
 
-function renderResults(data) {
-  // Clear previous
-  if (heatmapLayer)  { map.removeLayer(heatmapLayer);  heatmapLayer  = null; }
-  if (polygonLayer)  { map.removeLayer(polygonLayer);  polygonLayer  = null; }
+async function apiPost(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) { const e = await r.json().catch(() => ({ detail: r.statusText })); throw new Error(e.detail || r.statusText); }
+  return r.json();
+}
 
-  const bounds = data.raster.bounds;  // [[south,west],[north,east]]
-  const leafletBounds = L.latLngBounds(bounds[0], bounds[1]);
+// ── Render: Auto Segment (CLIP) ─────────────────────────────────────────────
+function renderSegments(data) {
+  if (!data.geojson.features.length) {
+    showResults(0, 0, '—', '—', []);
+    return;
+  }
+  segmentLayer = L.geoJSON(data.geojson, {
+    style: f => {
+      const col  = f.properties.color || '#888';
+      const isC  = f.properties.is_construction;
+      return { color: col, weight: isC ? 2.5 : 1.5, fillColor: col, fillOpacity: isC ? 0.45 : 0.22, dashArray: isC ? null : '4,3' };
+    },
+    onEachFeature: (f, layer) => {
+      const p = f.properties;
+      const top3Html = (p.top3 || []).map((t, i) =>
+        `<tr><td style="color:#888;font-size:11px;">${i === 0 ? '▶' : '  '} ${t.label}</td><td style="text-align:right;font-weight:${i===0?700:400};color:${i===0?p.color:'#888'}">${(t.score*100).toFixed(0)}%</td></tr>`
+      ).join('');
+      layer.bindPopup(`
+        <div style="font-family:sans-serif;font-size:13px;min-width:220px;">
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;">
+            <span style="width:12px;height:12px;border-radius:3px;background:${p.color};display:inline-block;flex-shrink:0;"></span>
+            <b style="color:${p.color}">${p.label}</b>
+          </div>
+          <table style="width:100%;border-collapse:collapse;">${top3Html}</table>
+          <div style="margin-top:8px;font-size:11px;color:#888;">
+            Area: ${p.area_m2.toLocaleString()} m² &nbsp;|&nbsp;
+            IOU: ${(p.predicted_iou*100).toFixed(0)}% &nbsp;|&nbsp;
+            Stability: ${(p.stability_score*100).toFixed(0)}%
+          </div>
+        </div>
+      `);
+      layer.on('mouseover', () => layer.setStyle({ fillOpacity: p.is_construction ? 0.75 : 0.5, weight: p.is_construction ? 3 : 2 }));
+      layer.on('mouseout',  () => layer.resetStyle());
+    }
+  });
+  if (showSeg) segmentLayer.addTo(map);
+  map.fitBounds(segmentLayer.getBounds(), { padding: [30, 30] });
 
-  // Probability heatmap
-  heatmapLayer = L.imageOverlay(data.raster.data, leafletBounds, { opacity: overlayOpacity, zIndex: 400 });
-  heatmapLayer.addTo(map);
+  document.getElementById('layer-toggles').style.display = 'flex';
+  document.getElementById('tog-heat').style.display = 'none';
+  document.getElementById('opacity-row').style.display = 'none';
 
-  // Detected polygons
+  const labels = data.stats.labels || {};
+  const topType = Object.entries(labels).sort((a,b) => b[1]-a[1])[0];
+  const maxScore = data.geojson.features.reduce((m, f) => Math.max(m, f.properties.score), 0);
+  showResults(data.stats.construction, data.stats.total,
+    topType ? topType[0].split(' ').slice(0,2).join(' ') : '—',
+    (maxScore * 100).toFixed(0) + '%',
+    Object.entries(labels).sort((a,b) => b[1]-a[1]).slice(0, 8).map(([l, n]) => {
+      const idx = CLIP_LABELS.indexOf(l);
+      const col = LABEL_COLORS[idx] || '#888';
+      return { label: l, count: n, color: col };
+    })
+  );
+}
+
+// ── Render: Change Detection ─────────────────────────────────────────────────
+function renderDetection(data) {
+  const bounds = data.raster.bounds;
+  heatmapLayer = L.imageOverlay(data.raster.data, L.latLngBounds(bounds[0], bounds[1]), { opacity: 0.6, zIndex: 400 });
+  if (showHeat) heatmapLayer.addTo(map);
+
   if (data.geojson.features.length > 0) {
-    polygonLayer = L.geoJSON(data.geojson, {
+    segmentLayer = L.geoJSON(data.geojson, {
       style: f => ({
         color:       f.properties.type === 'preexisting' ? '#f0883e' : '#f85149',
-        weight:      2,
-        fillColor:   f.properties.type === 'preexisting' ? '#f0883e' : '#f85149',
-        fillOpacity: 0.25,
+        weight: 2, fillColor: f.properties.type === 'preexisting' ? '#f0883e' : '#f85149', fillOpacity: 0.3,
       }),
       onEachFeature: (f, layer) => {
         const p = f.properties;
         layer.bindPopup(`
-          <div style="font-family:sans-serif;font-size:13px;min-width:180px;">
-            <b style="color:${p.type === 'preexisting' ? '#f0883e' : '#f85149'}">
-              ${p.type === 'preexisting' ? '🟠 Preexisting' : '🔴 New site'}
-            </b><br/>
-            <table style="margin-top:6px;width:100%;">
-              <tr><td style="color:#888">Combined</td><td><b>${(p.prob_combined*100).toFixed(1)}%</b></td></tr>
-              <tr><td style="color:#888">Preexisting</td><td>${(p.prob_preexisting*100).toFixed(1)}%</td></tr>
-              <tr><td style="color:#888">New</td><td>${(p.prob_new*100).toFixed(1)}%</td></tr>
-              <tr><td style="color:#888">Area</td><td>${p.area_m2.toLocaleString()} m²</td></tr>
-            </table>
-          </div>
+          <b style="color:${p.type==='preexisting'?'#f0883e':'#f85149'}">${p.type === 'preexisting' ? '🟠 Preexisting' : '🔴 New site'}</b>
+          <table style="margin-top:6px;font-size:12px;">
+            <tr><td style="color:#888">Score</td><td>${(p.prob_combined*100).toFixed(1)}%</td></tr>
+            <tr><td style="color:#888">Area</td><td>${p.area_m2.toLocaleString()} m²</td></tr>
+          </table>
         `);
-        layer.on('mouseover', () => layer.setStyle({ fillOpacity: 0.55 }));
-        layer.on('mouseout',  () => layer.setStyle({ fillOpacity: 0.25 }));
+        layer.on('mouseover', () => layer.setStyle({ fillOpacity: 0.6 }));
+        layer.on('mouseout',  () => layer.resetStyle());
       }
-    }).addTo(map);
-    map.fitBounds(polygonLayer.getBounds(), { padding: [40, 40] });
+    });
+    if (showSeg) segmentLayer.addTo(map);
+    map.fitBounds(segmentLayer.getBounds(), { padding: [30, 30] });
   }
 
-  // Stats
-  document.getElementById('stat-pre').textContent   = data.stats.n_preexisting;
-  document.getElementById('stat-new').textContent   = data.stats.n_new;
-  document.getElementById('stat-total').textContent = data.stats.total;
-  document.getElementById('stat-prob').textContent  = (data.stats.max_prob * 100).toFixed(0) + '%';
-  document.getElementById('results-section').style.display = 'block';
+  document.getElementById('layer-toggles').style.display = 'flex';
+  document.getElementById('tog-heat').style.display = '';
+  document.getElementById('opacity-row').style.display = 'flex';
+
+  showResults(data.stats.n_preexisting, data.stats.total, 'preexisting / new',
+    (data.stats.max_prob * 100).toFixed(0) + '%', [
+      { label: 'Preexisting (was 2022)', count: data.stats.n_preexisting, color: '#f0883e' },
+      { label: 'New (after 2022)',       count: data.stats.n_new,         color: '#f85149' },
+    ]);
 }
 
-// Label → colour for SAM objects
-const LABEL_COLORS = {
-  'crane': '#facc15', 'tower crane': '#facc15',
-  'scaffolding': '#fb923c',
-  'excavator': '#f87171', 'bulldozer': '#f87171',
-  'dump truck': '#a78bfa', 'concrete mixer': '#a78bfa',
-  'building under construction': '#34d399',
-  'construction site': '#34d399',
-  'construction machinery': '#60a5fa',
-  'foundation': '#818cf8', 'building frame': '#818cf8',
-  'steel structure': '#e879f9', 'pile driver': '#e879f9',
-};
-function labelColor(label) {
-  for (const [k, v] of Object.entries(LABEL_COLORS)) {
-    if (label.toLowerCase().includes(k)) return v;
-  }
-  return '#94a3b8';
-}
-
-function renderSegmentResults(data) {
-  if (heatmapLayer)  { map.removeLayer(heatmapLayer);  heatmapLayer  = null; }
-  if (polygonLayer)  { map.removeLayer(polygonLayer);  polygonLayer  = null; }
-
+// ── Render: Text SAM ─────────────────────────────────────────────────────────
+function renderTextSeg(data) {
   if (!data.geojson.features.length) {
-    document.getElementById('results-section').style.display = 'block';
-    document.getElementById('stat-pre').textContent   = '—';
-    document.getElementById('stat-new').textContent   = '—';
-    document.getElementById('stat-total').textContent = 0;
-    document.getElementById('stat-prob').textContent  = '—';
+    showResults(0, 0, '—', '—', []);
+    setStatus(data.message || 'No objects found — try lower threshold or zoom in.', 'error');
     return;
   }
-
-  polygonLayer = L.geoJSON(data.geojson, {
+  segmentLayer = L.geoJSON(data.geojson, {
     style: f => {
       const col = labelColor(f.properties.label);
-      return { color: col, weight: 2, fillColor: col, fillOpacity: 0.3 };
+      return { color: col, weight: 2.5, fillColor: col, fillOpacity: 0.35 };
     },
     onEachFeature: (f, layer) => {
       const p = f.properties;
       const col = labelColor(p.label);
       layer.bindPopup(`
-        <div style="font-family:sans-serif;font-size:13px;min-width:200px;">
-          <b style="color:${col}">🏗 ${p.label}</b><br/>
-          <table style="margin-top:6px;width:100%;">
-            <tr><td style="color:#888">Detection</td><td><b>${(p.det_score*100).toFixed(1)}%</b></td></tr>
-            <tr><td style="color:#888">Construction score</td><td><b>${(p.proto_score*100).toFixed(1)}%</b></td></tr>
-            <tr><td style="color:#888">Combined</td><td><b>${(p.combined*100).toFixed(1)}%</b></td></tr>
-            <tr><td style="color:#888">Area</td><td>${p.area_m2.toLocaleString()} m²</td></tr>
-          </table>
-        </div>
+        <b style="color:${col}">🏗 ${p.label}</b>
+        <table style="margin-top:6px;font-size:12px;">
+          <tr><td style="color:#888">DINO score</td><td>${(p.det_score*100).toFixed(1)}%</td></tr>
+          <tr><td style="color:#888">Proto score</td><td>${(p.proto_score*100).toFixed(1)}%</td></tr>
+          <tr><td style="color:#888">Area</td><td>${p.area_m2.toLocaleString()} m²</td></tr>
+        </table>
       `);
-      layer.on('mouseover', () => layer.setStyle({ fillOpacity: 0.6 }));
-      layer.on('mouseout',  () => layer.setStyle({ fillOpacity: 0.3 }));
+      layer.on('mouseover', () => layer.setStyle({ fillOpacity: 0.65 }));
+      layer.on('mouseout',  () => layer.resetStyle());
     }
-  }).addTo(map);
-  map.fitBounds(polygonLayer.getBounds(), { padding: [40, 40] });
+  });
+  if (showSeg) segmentLayer.addTo(map);
+  map.fitBounds(segmentLayer.getBounds(), { padding: [30, 30] });
+  document.getElementById('layer-toggles').style.display = 'flex';
+  document.getElementById('tog-heat').style.display = 'none';
+  document.getElementById('opacity-row').style.display = 'none';
 
-  // Stats
-  const objStr = Object.entries(data.stats.objects || {})
-    .map(([k, v]) => `${v}× ${k}`).join(', ');
-  document.getElementById('stat-pre').textContent   = objStr || '—';
-  document.getElementById('stat-new').textContent   = Object.keys(data.stats.objects || {}).length + ' types';
-  document.getElementById('stat-total').textContent = data.stats.total;
-  document.getElementById('stat-prob').textContent  = data.stats.max_combined
-    ? (data.stats.max_combined * 100).toFixed(0) + '%' : '—';
+  const types = data.stats.objects || {};
+  const top = Object.entries(types).sort((a,b)=>b[1]-a[1])[0];
+  showResults(data.stats.total, data.stats.total, top ? top[0] : '—',
+    data.stats.max_combined ? (data.stats.max_combined*100).toFixed(0)+'%' : '—',
+    Object.entries(types).map(([l,n]) => ({ label: l, count: n, color: labelColor(l) }))
+  );
+}
+
+// ── Render: One-Shot ──────────────────────────────────────────────────────────
+function renderOneShot(data) {
+  const bounds = data.raster.bounds;
+  heatmapLayer = L.imageOverlay(data.raster.data, L.latLngBounds(bounds[0], bounds[1]), { opacity: 0.65, zIndex: 400 });
+  heatmapLayer.addTo(map);
+
+  if (data.geojson.features.length > 0) {
+    segmentLayer = L.geoJSON(data.geojson, {
+      style: () => ({ color: '#a78bfa', weight: 2, fillColor: '#a78bfa', fillOpacity: 0.25 }),
+      onEachFeature: (f, layer) => {
+        const p = f.properties;
+        layer.bindPopup(`
+          <b style="color:#a78bfa">🎯 Similar patch</b>
+          <table style="margin-top:6px;font-size:12px;">
+            <tr><td style="color:#888">Similarity</td><td>${(p.similarity*100).toFixed(1)}%</td></tr>
+            <tr><td style="color:#888">Area</td><td>${p.area_m2 ? p.area_m2.toLocaleString() : '—'} m²</td></tr>
+          </table>
+        `);
+        layer.on('mouseover', () => layer.setStyle({ fillOpacity: 0.55 }));
+        layer.on('mouseout',  () => layer.resetStyle());
+      }
+    });
+    segmentLayer.addTo(map);
+    map.fitBounds(segmentLayer.getBounds(), { padding: [30, 30] });
+  } else {
+    // Fit to heatmap bounds
+    map.fitBounds(L.latLngBounds(bounds[0], bounds[1]), { padding: [20, 20] });
+  }
+
+  // Show layer controls in results section
+  document.getElementById('results-section').style.display = 'block';
+  document.getElementById('stat-constr').textContent = data.stats.n_matches;
+  document.getElementById('stat-total').textContent  = data.stats.n_matches;
+  document.getElementById('stat-types').textContent  = 'similar';
+  document.getElementById('stat-score').textContent  = (data.stats.max_sim * 100).toFixed(0) + '%';
+  document.getElementById('label-list').innerHTML = `
+    <div class="label-row">
+      <span class="label-dot" style="background:#a78bfa;"></span>
+      <span class="label-name">SAM2 + CLIP similarity match</span>
+      <span class="label-count">${data.stats.n_matches}</span>
+    </div>`;
+}
+
+function showResults(constr, total, topType, score, labelItems) {
+  document.getElementById('stat-constr').textContent = constr;
+  document.getElementById('stat-total').textContent  = total;
+  document.getElementById('stat-types').textContent  = topType;
+  document.getElementById('stat-score').textContent  = score;
+  const ll = document.getElementById('label-list');
+  ll.innerHTML = labelItems.map(item => `
+    <div class="label-row">
+      <span class="label-dot" style="background:${item.color};"></span>
+      <span class="label-name" title="${item.label}">${item.label}</span>
+      <span class="label-count">${item.count}</span>
+    </div>
+  `).join('');
   document.getElementById('results-section').style.display = 'block';
 }
 
-function downloadGPKG() {
-  window.location.href = '/api/download/results.gpkg';
+// Legacy label→color for DINO text mode
+const DINO_COLORS = { 'crane':'#facc15','tower crane':'#facc15','scaffolding':'#fb923c','excavator':'#f87171','bulldozer':'#f87171','dump truck':'#a78bfa','concrete mixer':'#a78bfa','building under construction':'#34d399','construction site':'#34d399','foundation':'#818cf8' };
+function labelColor(label) {
+  for (const [k, v] of Object.entries(DINO_COLORS)) if (label.toLowerCase().includes(k)) return v;
+  return '#94a3b8';
 }
 
-// ── Status ─────────────────────────────────────────────────────────────────────
+function downloadGPKG() { window.location.href = '/api/download/results.gpkg'; }
+
+// ── Status ──────────────────────────────────────────────────────────────────
 function setStatus(msg, type = '') {
   const el = document.getElementById('status-bar');
-  el.textContent = msg;
-  el.className = type;
+  el.textContent = msg; el.className = type;
 }
 
-// ── Health poll ─────────────────────────────────────────────────────────────────
+// ── Health poll ─────────────────────────────────────────────────────────────
 async function checkHealth() {
   try {
-    const r = await fetch('/api/health');
-    const d = await r.json();
+    const d = await (await fetch('/api/health')).json();
     if (d.ready) {
-      setStatus(`Model ready · ${d.device}`, 'ok');
+      setStatus(`Models ready · ${d.device} · SAM2 + CLIP + DINO + Depth`, 'ok');
       clearInterval(healthInterval);
-    } else {
-      setStatus('Loading SAM2 model…');
-    }
+    } else { setStatus('Loading SAM2 + CLIP + Depth models… (first load ~90 s)'); }
   } catch { setStatus('Connecting…'); }
 }
-
 const healthInterval = setInterval(checkHealth, 3000);
 checkHealth();
 </script>
