@@ -217,11 +217,17 @@ python scripts/score_area.py \
     --prototypes  checkpoints/prototypes.pt \
     --checkpoint  checkpoints/best.pt \
     --mask2022    data/raw/BT2022.gpkg \
-    --out         outputs/construction_prob_2024.tif
+    --out         outputs/construction_prob_2024.tif \
+    --out-gpkg    outputs/construction_sites_2024.gpkg \
+    --threshold   0.5
 ```
 
-Output is a float32 GeoTIFF in **EPSG:28992** with pixel values in `[0, 1]`.
-Load it in QGIS, ArcGIS, or any raster tool.
+| Output | Format | Contents |
+|---|---|---|
+| `construction_prob_2024.tif` | Float32 GeoTIFF · 3 bands | Band 1: combined · Band 2: preexisting · Band 3: new |
+| `construction_sites_2024.gpkg` | GeoPackage · vector polygons | `type`, `prob_combined`, `prob_preexisting`, `prob_new`, `area_m2` |
+
+Both are in **EPSG:28992** and load directly into QGIS, ArcGIS, or any GIS tool.
 
 ---
 
