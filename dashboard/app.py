@@ -51,6 +51,25 @@ DEVICE: Optional[torch.device] = None
 MODEL_READY     = False
 LAST_GPKG: Optional[Path] = None
 
+# ── Segment classifier (trained on BT2022) ────────────────────────────────────
+import pickle as _pickle
+_CLASSIFIER   = None
+_CLF_FEAT_NAMES = None
+_CLF_PATH = Path(__file__).parent.parent / "checkpoints" / "segment_classifier.pkl"
+
+def _load_classifier() -> None:
+    global _CLASSIFIER, _CLF_FEAT_NAMES
+    if _CLF_PATH.exists():
+        with open(_CLF_PATH, "rb") as _f:
+            _p = _pickle.load(_f)
+        _CLASSIFIER   = _p["clf"]
+        _CLF_FEAT_NAMES = _p["feat_names"]
+        logger.info("Segment classifier loaded ← %s  (CV-AUC=%.3f  n_train=%d)",
+                    _CLF_PATH, _p["cv_roc_auc"], _p["n_train"])
+    else:
+        logger.info("No trained classifier found at %s — using heuristic scoring.", _CLF_PATH)
+
+
 CIR_WMS_URL = "https://service.pdok.nl/hwh/luchtfotocir/wms/v1_0"
 
 # ── CLIP labels ───────────────────────────────────────────────────────────────
@@ -165,6 +184,7 @@ def _load_model() -> None:
 async def startup() -> None:
     loop = asyncio.get_event_loop()
     loop.run_in_executor(concurrent.futures.ThreadPoolExecutor(max_workers=1), _load_model)
+    _load_classifier()
 
 
 # ── Request schema ────────────────────────────────────────────────────────────
@@ -439,6 +459,17 @@ def _construction_score(
     else:
         clip_s = 0.0
 
+        # ── Use trained classifier if available ──────────────────────────────────
+    if _CLASSIFIER is not None:
+        feat = np.array([
+            ndvi_22 if ndvi_22 is not None else 0.0,
+            ndvi_24 if ndvi_24 is not None else 0.0,
+            (ndvi_22 or 0.0) - (ndvi_24 or 0.0),
+            0.0,        # ndbi_24 not passed here — heuristic fallback
+            depth_var_24 * 1000 if depth_var_24 is not None else 0.0,
+        ] + (all_sims if all_sims else [0.0] * 14), dtype=np.float32).reshape(1, -1)
+        prob = float(_CLASSIFIER.predict_proba(feat)[0, 1])
+        return round(prob, 3)
     return round(0.25 * ndvi_abs + 0.30 * ndvi_delta + 0.20 * roughness + 0.25 * clip_s, 3)
 
 
@@ -632,10 +663,7 @@ def _run_analyze_bbox(bbox_rd: tuple) -> dict:
         for year in (2022, 2024):
             ndbi[year] = _compute_ndbi(cir[year], target_hw) if cir[year] is not None else None
 
-        # Only send RGB overlays to frontend — derived overlays removed from UI
-        overlays: dict[str, Optional[str]] = {}
-        for year in (2022, 2024):
-            overlays[f"rgb_{year}"] = _img_to_b64(rgb[year]) if rgb[year] is not None else None
+        # No image overlays — frontend uses live PDOK WMS tile layers as basemap
 
         # ── 6. SAM2 dense auto-segment on 2024 ───────────────────────────────
         logger.info("SAM2 auto-segment 2024 (%dx%d) …", H, W)
@@ -752,18 +780,13 @@ def _run_analyze_bbox(bbox_rd: tuple) -> dict:
             LAST_GPKG = gpkg_out
             logger.info("GeoPackage → %s", gpkg_out)
 
-        # Original drawn bbox (WGS84) — used for fitBounds + segment clip
-        west,  south,  east,  north  = _to_wgs84_bounds(original_bbox_rd)
-        # Expanded tile bbox (WGS84) — used to place image overlays correctly
-        tw, ts, te, tn               = _to_wgs84_bounds(bbox_rd_exp)
+        west, south, east, north = _to_wgs84_bounds(original_bbox_rd)
         n_constr = sum(1 for f in features_json
                        if f["properties"]["terrain_label"] == "likely construction terrain")
 
         return {
-            "bounds":      [[south, west], [north, east]],  # drawn area, for fitBounds
-            "tile_bounds": [[ts,    tw],   [tn,    te]],    # expanded tile, for image overlays
-            "overlays":    overlays,
-            "segments":    {"type": "FeatureCollection", "features": features_json},
+            "bounds":   [[south, west], [north, east]],
+            "segments": {"type": "FeatureCollection", "features": features_json},
             "stats": {
                 "total":        len(features_json),
                 "construction": n_constr,
