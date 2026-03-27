@@ -479,32 +479,43 @@ def _assign_terrain_label(
     construction_score: float,
     ndvi_24: Optional[float],
     ndvi_22: Optional[float],
-    green_frac: float = 0.0,
+    green_frac:   float = 0.0,
     uniform_frac: float = 0.0,
+    grey_frac:    float = 0.0,
+    ndvi_delta:   Optional[float] = None,
 ) -> str:
     """Map fused scores → one of the 7 terrain classes.
 
-    Hard exclusion gates (in priority order):
-      1. Green pixel fraction > 40 %  → vegetation  (direct RGB colour)
-      2. NDVI > 0.35                  → vegetation  (spectral)
-      3. NDVI stable & positive       → vegetation  (temporal)
-      4. Very uniform pixels + low roughness + low construction score
-                                      → roof/building (not construction terrain)
+    Hard exclusion gates (priority order):
+      1. Green pixels > 40 %              → vegetation
+      2. NDVI spectral / temporal         → vegetation
+      3. Predominantly grey + stable NDVI → paved / railway
+      4. Uniform colour + low score       → roof / building
+      5. construction_score threshold     → likely construction terrain
+    Construction terrain must be: non-green, non-grey, non-uniform, disturbed.
     """
-    # ── Gate 1: green pixels ──────────────────────────────────────────────────
+    stable = (ndvi_delta is not None and abs(ndvi_delta) < 0.08)
+
+    # ── Gate 1: green ─────────────────────────────────────────────────────────
     if green_frac > 0.40:
         return "vegetation"
 
-    # ── Gate 2 & 3: NDVI ─────────────────────────────────────────────────────
+    # ── Gate 2: NDVI spectral / temporal ─────────────────────────────────────
     if ndvi_24 is not None and ndvi_24 > 0.35:
         return "vegetation"
     if (ndvi_22 is not None and ndvi_22 > 0.30) and (ndvi_24 is not None and ndvi_24 > 0.22):
         return "vegetation"
 
-    # ── Gate 4: roof/building — very uniform pixels, not barren-textured ─────
-    # Roofs are spectrally uniform (single colour), not construction terrain.
-    # Construction terrain is rough, mixed, non-uniform.
-    if uniform_frac > 0.75 and construction_score < 0.55:
+    # ── Gate 3: grey + temporally stable → paved surface / railway ───────────
+    # Railways and roads are predominantly grey and haven't changed year-on-year.
+    if grey_frac > 0.55 and stable and construction_score < 0.60:
+        return "paved surface"
+    if grey_frac > 0.70 and construction_score < 0.65:
+        return "paved surface"
+
+    # ── Gate 4: uniform colour + low score → roof / building ─────────────────
+    # Rooftops are spectrally homogeneous. Construction terrain is mixed & rough.
+    if uniform_frac > 0.65 and construction_score < 0.55:
         return "roof / building"
 
     # ── Strong construction signal ────────────────────────────────────────────
@@ -603,24 +614,29 @@ def _pixel_stats(img_np: np.ndarray, seg: np.ndarray, target_hw: tuple) -> dict:
     # Green-dominant pixels (vegetation)
     green_px   = (g > r * 1.05) & (g > b * 1.05) & (g > 40)
 
-    # Barren/earthy pixels: low saturation, middling brightness, no dominant channel
-    # Typical bare soil is brownish/grey — all channels similar, brightness 40–200
     brightness = (r + g + b) / 3.0
     max_ch     = np.maximum(np.maximum(r, g), b)
     min_ch     = np.minimum(np.minimum(r, g), b)
-    saturation = (max_ch - min_ch) / (max_ch + 1e-6)   # 0 = grey, 1 = vivid
-    barren_px  = (saturation < 0.30) & (brightness > 30) & (brightness < 210) & (~green_px)
+    saturation = (max_ch - min_ch) / (max_ch + 1e-6)   # 0=grey, 1=vivid
 
-    # Uniform pixels: within 20 of segment mean per channel (roof uniformity)
+    # Barren/earthy: low-moderate saturation, middling brightness, not green
+    # Captures exposed soil, gravel, sand, aggregate — what construction terrain looks like
+    barren_px = (saturation < 0.30) & (brightness > 30) & (brightness < 210) & (~green_px)
+
+    # Grey pixels: very low saturation — asphalt, concrete, railway ballast, metal roofs
+    grey_px = (saturation < 0.12) & (brightness > 20)
+
+    # Uniform pixels: each channel within 20 of segment mean — solid-colour rooftops
     mean_r, mean_g, mean_b = r.mean(), g.mean(), b.mean()
     uniform_px = (
-        (np.abs(r - mean_r) < 25) & (np.abs(g - mean_g) < 25) & (np.abs(b - mean_b) < 25)
+        (np.abs(r - mean_r) < 20) & (np.abs(g - mean_g) < 20) & (np.abs(b - mean_b) < 20)
     )
 
     n = len(pixels)
     return {
         "green_frac":   float(green_px.sum()   / n),
         "barren_frac":  float(barren_px.sum()  / n),
+        "grey_frac":    float(grey_px.sum()     / n),
         "uniform_frac": float(uniform_px.sum() / n),
     }
 
@@ -815,17 +831,21 @@ def _run_analyze_bbox(bbox_rd: tuple) -> dict:
             ndbi_24 = (round(_mask_mean(ndbi[2024], seg, target_hw), 3)
                        if ndbi[2024] is not None else None)
 
-            # RGB pixel statistics — green / barren / uniform fractions
-            pstats     = _pixel_stats(img_2024, seg, target_hw)
-            green_frac = round(pstats["green_frac"],   3)
-            barren_frac= round(pstats["barren_frac"],  3)
-            uniform_frac=round(pstats["uniform_frac"], 3)
+            # RGB pixel statistics — green / barren / grey / uniform fractions
+            pstats       = _pixel_stats(img_2024, seg, target_hw)
+            green_frac   = round(pstats["green_frac"],   3)
+            barren_frac  = round(pstats["barren_frac"],  3)
+            grey_frac    = round(pstats["grey_frac"],    3)
+            uniform_frac = round(pstats["uniform_frac"], 3)
+            ndvi_delta_v = round((ndvi_22 or 0.0) - (ndvi_24 or 0.0), 3) if ndvi_22 and ndvi_24 else None
 
             # Scores — temporal-aware
             cs      = _construction_score(cr.get("all_sims", []), ndvi_24, ndvi_22,
                                           depth_var, depth_var_22)
-            terrain = _assign_terrain_label(cr.get("all_sims", []), cs, ndvi_24, ndvi_22,
-                                            green_frac, uniform_frac)
+            terrain = _assign_terrain_label(
+                cr.get("all_sims", []), cs, ndvi_24, ndvi_22,
+                green_frac, uniform_frac, grey_frac, ndvi_delta_v
+            )
             color   = TERRAIN_COLORS.get(terrain, "#666666")
             top3    = [{"label": CLIP_LABELS[i], "score": round(float(s), 3)}
                        for i, s in zip(cr["top_idx"], cr["top_scores"])]
@@ -843,6 +863,7 @@ def _run_analyze_bbox(bbox_rd: tuple) -> dict:
                 "depth_roughness":    depth_var,
                 "green_fraction":     green_frac,
                 "barren_fraction":    barren_frac,
+                "grey_fraction":      grey_frac,
                 "uniform_fraction":   uniform_frac,
                 "area_px":            int(mdata["area"]),
                 "top3_clip":          top3,
