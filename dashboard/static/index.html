@@ -305,6 +305,8 @@ function renderResults(data) {
             <span class="plabel">ΔNDVI</span><span class="pval">${dlt}</span>
             <span class="plabel">NDBI 2024</span><span class="pval">${p.mean_ndbi_2024 ?? '—'}</span>
             <span class="plabel">Roughness</span><span class="pval">${p.depth_roughness ?? '—'}</span>
+            <span class="plabel">Green px</span><span class="pval">${p.green_fraction != null ? Math.round(p.green_fraction*100)+'%' : '—'}</span>
+            <span class="plabel">Uniform px</span><span class="pval">${p.uniform_fraction != null ? Math.round(p.uniform_fraction*100)+'%' : '—'}</span>
             <span class="plabel">Area</span><span class="pval">${p.area_px.toLocaleString()} px</span>
           </div>
           ${p.top3_clip ? `<div style="margin-top:5px;font-size:10px;color:#777;font-weight:600">TOP CLIP</div>

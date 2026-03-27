@@ -479,18 +479,33 @@ def _assign_terrain_label(
     construction_score: float,
     ndvi_24: Optional[float],
     ndvi_22: Optional[float],
+    green_frac: float = 0.0,
+    uniform_frac: float = 0.0,
 ) -> str:
     """Map fused scores → one of the 7 terrain classes.
 
-    Hard vegetation gate: if area is clearly green (high NDVI in 2024, or
-    green in BOTH years), it is labelled vegetation regardless of construction
-    score — prevents forests/parks from being mis-classified as construction.
+    Hard exclusion gates (in priority order):
+      1. Green pixel fraction > 40 %  → vegetation  (direct RGB colour)
+      2. NDVI > 0.35                  → vegetation  (spectral)
+      3. NDVI stable & positive       → vegetation  (temporal)
+      4. Very uniform pixels + low roughness + low construction score
+                                      → roof/building (not construction terrain)
     """
-    # ── Hard vegetation gate ──────────────────────────────────────────────────
+    # ── Gate 1: green pixels ──────────────────────────────────────────────────
+    if green_frac > 0.40:
+        return "vegetation"
+
+    # ── Gate 2 & 3: NDVI ─────────────────────────────────────────────────────
     if ndvi_24 is not None and ndvi_24 > 0.35:
         return "vegetation"
     if (ndvi_22 is not None and ndvi_22 > 0.30) and (ndvi_24 is not None and ndvi_24 > 0.22):
         return "vegetation"
+
+    # ── Gate 4: roof/building — very uniform pixels, not barren-textured ─────
+    # Roofs are spectrally uniform (single colour), not construction terrain.
+    # Construction terrain is rough, mixed, non-uniform.
+    if uniform_frac > 0.75 and construction_score < 0.55:
+        return "roof / building"
 
     # ── Strong construction signal ────────────────────────────────────────────
     if construction_score >= 0.60:
@@ -564,6 +579,74 @@ def _masks_to_gdf(masks_sorted: list, img_shape: tuple, tile_crs, tile_transform
 
 
 # ── Per-segment signal helpers ────────────────────────────────────────────────
+def _pixel_stats(img_np: np.ndarray, seg: np.ndarray, target_hw: tuple) -> dict:
+    """Compute RGB pixel statistics for a segment.
+
+    Returns:
+      green_frac   — fraction of pixels where G dominates (vegetation)
+      barren_frac  — fraction of pixels that are dull/earthy (bare soil/dirt)
+      uniform_frac — fraction of pixels near the segment mean (roof uniformity)
+    """
+    import cv2
+    H, W = target_hw
+    if img_np.shape[:2] != (H, W):
+        img_np = cv2.resize(img_np, (W, H), interpolation=cv2.INTER_LINEAR)
+    seg_r = (seg if seg.shape == (H, W)
+             else cv2.resize(seg.astype(np.uint8), (W, H),
+                             interpolation=cv2.INTER_NEAREST).astype(bool))
+    pixels = img_np[seg_r].astype(np.float32)
+    if len(pixels) == 0:
+        return {"green_frac": 0.0, "barren_frac": 0.0, "uniform_frac": 0.0}
+
+    r, g, b = pixels[:, 0], pixels[:, 1], pixels[:, 2]
+
+    # Green-dominant pixels (vegetation)
+    green_px   = (g > r * 1.05) & (g > b * 1.05) & (g > 40)
+
+    # Barren/earthy pixels: low saturation, middling brightness, no dominant channel
+    # Typical bare soil is brownish/grey — all channels similar, brightness 40–200
+    brightness = (r + g + b) / 3.0
+    max_ch     = np.maximum(np.maximum(r, g), b)
+    min_ch     = np.minimum(np.minimum(r, g), b)
+    saturation = (max_ch - min_ch) / (max_ch + 1e-6)   # 0 = grey, 1 = vivid
+    barren_px  = (saturation < 0.30) & (brightness > 30) & (brightness < 210) & (~green_px)
+
+    # Uniform pixels: within 20 of segment mean per channel (roof uniformity)
+    mean_r, mean_g, mean_b = r.mean(), g.mean(), b.mean()
+    uniform_px = (
+        (np.abs(r - mean_r) < 25) & (np.abs(g - mean_g) < 25) & (np.abs(b - mean_b) < 25)
+    )
+
+    n = len(pixels)
+    return {
+        "green_frac":   float(green_px.sum()   / n),
+        "barren_frac":  float(barren_px.sum()  / n),
+        "uniform_frac": float(uniform_px.sum() / n),
+    }
+
+
+def _green_fraction(img_np: np.ndarray, seg: np.ndarray, target_hw: tuple) -> float:
+    """Fraction of segment pixels where green channel dominates (RGB vegetation indicator).
+
+    A pixel is 'green' when:
+      G > R * 1.05  AND  G > B * 1.05  AND  G > 40
+    This catches grass, trees, crops in standard RGB aerial imagery.
+    """
+    import cv2
+    H, W = target_hw
+    if img_np.shape[:2] != (H, W):
+        img_np = cv2.resize(img_np, (W, H), interpolation=cv2.INTER_LINEAR)
+    seg_r = (seg if seg.shape == (H, W)
+             else cv2.resize(seg.astype(np.uint8), (W, H),
+                             interpolation=cv2.INTER_NEAREST).astype(bool))
+    pixels = img_np[seg_r].astype(np.float32)   # N × 3 (R, G, B)
+    if len(pixels) == 0:
+        return 0.0
+    r, g, b = pixels[:, 0], pixels[:, 1], pixels[:, 2]
+    green_px = (g > r * 1.05) & (g > b * 1.05) & (g > 40)
+    return float(green_px.sum() / len(pixels))
+
+
 def _mask_mean(signal: np.ndarray, seg: np.ndarray, target_hw: tuple) -> float:
     import cv2
     H, W = target_hw
@@ -732,10 +815,17 @@ def _run_analyze_bbox(bbox_rd: tuple) -> dict:
             ndbi_24 = (round(_mask_mean(ndbi[2024], seg, target_hw), 3)
                        if ndbi[2024] is not None else None)
 
+            # RGB pixel statistics — green / barren / uniform fractions
+            pstats     = _pixel_stats(img_2024, seg, target_hw)
+            green_frac = round(pstats["green_frac"],   3)
+            barren_frac= round(pstats["barren_frac"],  3)
+            uniform_frac=round(pstats["uniform_frac"], 3)
+
             # Scores — temporal-aware
             cs      = _construction_score(cr.get("all_sims", []), ndvi_24, ndvi_22,
                                           depth_var, depth_var_22)
-            terrain = _assign_terrain_label(cr.get("all_sims", []), cs, ndvi_24, ndvi_22)
+            terrain = _assign_terrain_label(cr.get("all_sims", []), cs, ndvi_24, ndvi_22,
+                                            green_frac, uniform_frac)
             color   = TERRAIN_COLORS.get(terrain, "#666666")
             top3    = [{"label": CLIP_LABELS[i], "score": round(float(s), 3)}
                        for i, s in zip(cr["top_idx"], cr["top_scores"])]
@@ -751,6 +841,9 @@ def _run_analyze_bbox(bbox_rd: tuple) -> dict:
                 "mean_ndbi_2024":     ndbi_24,
                 "depth_mean":         depth_mean,
                 "depth_roughness":    depth_var,
+                "green_fraction":     green_frac,
+                "barren_fraction":    barren_frac,
+                "uniform_fraction":   uniform_frac,
                 "area_px":            int(mdata["area"]),
                 "top3_clip":          top3,
                 "predicted_iou":      round(float(mdata.get("predicted_iou", 0)), 3),
