@@ -56,7 +56,7 @@ log = logging.getLogger("train_classifier")
 BT2022_PATH   = ROOT / "data" / "raw" / "BT2022.gpkg"
 CACHE_DIR     = ROOT / "data" / "tile_cache"
 CKPT_OUT      = ROOT / "checkpoints" / "segment_classifier.pkl"
-IOU_THRESH    = 0.25    # segment IoU with BT2022 polygon → positive label
+CONTAIN_THRESH = 0.50   # fraction of segment area inside BT2022 polygon → positive label
 MIN_SEG_AREA  = 200     # pixels — ignore tiny fragments
 RANDOM_SEED   = 42
 
@@ -347,11 +347,14 @@ def _seg_to_polygon(m, tile_transform, tile_crs):
     return gdf.geometry.iloc[0]
 
 
-def _iou(geom_a, geom_b) -> float:
+def _containment(seg_geom, site_geom) -> float:
+    """Fraction of seg_geom's area that falls inside site_geom.
+    A small SAM segment completely inside a large BT2022 polygon → 1.0.
+    IoU would give ~0.01 for the same case — useless for labelling.
+    """
     try:
-        inter = geom_a.intersection(geom_b).area
-        union = geom_a.union(geom_b).area
-        return inter / union if union > 0 else 0.0
+        inter = seg_geom.intersection(site_geom).area
+        return inter / seg_geom.area if seg_geom.area > 0 else 0.0
     except Exception:
         return 0.0
 
@@ -398,8 +401,8 @@ def process_tile(bbox_rd_exp, site_geom_wgs84, cache_dir) -> list[dict]:
         if seg_geom is None or seg_geom.is_empty:
             continue
 
-        iou_score = _iou(seg_geom, site_geom_wgs84)
-        label = 1 if iou_score >= IOU_THRESH else 0
+        contain = _containment(seg_geom, site_geom_wgs84)
+        label = 1 if contain >= CONTAIN_THRESH else 0
 
         # Feature extraction
         n22 = round(_mask_mean(ndvi22, m["segmentation"], target_hw), 4) if ndvi22 is not None else 0.0
@@ -413,7 +416,7 @@ def process_tile(bbox_rd_exp, site_geom_wgs84, cache_dir) -> list[dict]:
             dtype=np.float32
         )  # shape (19,)
 
-        records.append({"features": feat, "label": label, "iou": iou_score,
+        records.append({"features": feat, "label": label, "containment": contain,
                          "area_px": int(m["area"])})
     return records
 
