@@ -14,30 +14,30 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 
   <style>
-    #map { position:relative; }
-    .leaflet-container { background:#1a1a2e; }
+    .leaflet-container { background:#111; }
     .leaflet-control-zoom a { background:#1f2937!important; color:#e5e7eb!important; border-color:#374151!important; }
     .leaflet-draw-toolbar a { background-color:#1f2937!important; }
 
-    .lslider { -webkit-appearance:none; width:100%; height:3px; border-radius:2px; background:#4b5563; outline:none; cursor:pointer; }
-    .lslider::-webkit-slider-thumb { -webkit-appearance:none; width:12px; height:12px; border-radius:50%; background:#f97316; cursor:pointer; }
+    .lslider { -webkit-appearance:none; width:100%; height:3px; border-radius:2px;
+               background:#4b5563; outline:none; cursor:pointer; }
+    .lslider::-webkit-slider-thumb { -webkit-appearance:none; width:12px; height:12px;
+               border-radius:50%; background:#f97316; cursor:pointer; }
     .lslider-row { display:none; padding-top:4px; }
     .lrow:hover .lslider-row { display:block; }
 
-    #terrain-legend { position:absolute; bottom:30px; left:10px; z-index:1000; background:rgba(17,24,39,.90); border:1px solid #374151; border-radius:6px; padding:8px 10px; pointer-events:none; }
+    #terrain-legend { position:absolute; bottom:30px; left:10px; z-index:1000;
+      background:rgba(17,24,39,.90); border:1px solid #374151; border-radius:6px;
+      padding:8px 10px; pointer-events:none; }
 
-    .seg-popup { font-size:12px; min-width:220px; line-height:1.5; }
-    .seg-popup .ptitle { font-weight:700; font-size:13px; margin-bottom:5px; }
-    .seg-popup .pbar-bg { background:#e5e7eb; border-radius:3px; height:5px; margin-bottom:5px; }
+    .seg-popup { font-size:12px; min-width:220px; line-height:1.6; }
+    .seg-popup .ptitle { font-weight:700; font-size:13px; margin-bottom:4px; }
+    .seg-popup .pbar-bg { background:#e5e7eb; border-radius:3px; height:5px; margin-bottom:6px; }
     .seg-popup .pbar-fg { border-radius:3px; height:5px; }
     .seg-popup .pgrid { display:grid; grid-template-columns:1fr 1fr; gap:2px 8px; }
     .seg-popup .plabel { color:#6b7280; font-size:10px; }
     .seg-popup .pval { font-size:11px; font-weight:600; color:#111827; }
-    .seg-popup .pclip { font-size:10px; color:#374151; }
-    .seg-popup .pclip b { color:#111827; }
 
     ::-webkit-scrollbar { width:4px; }
-    ::-webkit-scrollbar-track { background:transparent; }
     ::-webkit-scrollbar-thumb { background:#374151; border-radius:2px; }
     details summary::-webkit-details-marker { display:none; }
   </style>
@@ -48,6 +48,7 @@
 <!-- ══════════ SIDEBAR ══════════ -->
 <aside class="w-72 min-w-[288px] bg-gray-900 border-r border-gray-700 flex flex-col overflow-hidden">
 
+  <!-- Header -->
   <div class="px-4 py-3 border-b border-gray-700 flex items-center gap-2 shrink-0">
     <span class="text-2xl leading-none">⬡</span>
     <div>
@@ -58,7 +59,7 @@
 
   <div class="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
 
-    <!-- Draw + Analyze -->
+    <!-- Actions -->
     <div class="space-y-2">
       <button id="btn-draw" onclick="startDraw()"
         class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium transition-colors cursor-pointer">
@@ -81,24 +82,24 @@
       </button>
     </div>
 
-    <!-- ── Layers ── -->
+    <!-- Layers -->
     <details open>
       <summary class="flex items-center justify-between py-1.5 cursor-pointer text-gray-400 hover:text-gray-200 text-xs font-semibold uppercase tracking-wider select-none">
-        <span>Layers</span><span class="text-gray-500 text-base">›</span>
+        <span>Result Layers</span><span class="text-gray-500 text-base">›</span>
       </summary>
       <div class="mt-1 space-y-0.5">
 
-        <div class="lrow flex flex-col px-1 py-1.5 rounded hover:bg-gray-800 cursor-pointer" id="lr-segments" data-ready="false">
+        <div class="lrow flex flex-col px-1 py-1.5 rounded hover:bg-gray-800" id="lr-segments">
           <div class="flex items-center gap-2">
             <button onclick="toggleLayer('segments')" class="leye w-6 h-6 flex items-center justify-center text-base" style="opacity:.35">👁</button>
-            <span class="w-4 h-4 rounded-sm shrink-0" style="background:#22BB44;border:1.5px solid #22BB44;opacity:.7"></span>
-            <span class="text-gray-300 text-xs flex-1">SAM Segments</span>
+            <span class="w-4 h-4 rounded-sm shrink-0" style="background:#22BB44;opacity:.7;border:1.5px solid #22BB44"></span>
+            <span class="text-gray-300 text-xs flex-1">All segments</span>
             <span class="text-gray-500 text-xs" id="lo-segments">50%</span>
           </div>
           <div class="lslider-row px-8"><input type="range" class="lslider" min="0" max="1" step="0.05" value="0.5" oninput="setLayerOpacity('segments',this.value)"></div>
         </div>
 
-        <div class="lrow flex flex-col px-1 py-1.5 rounded hover:bg-gray-800 cursor-pointer" id="lr-construction" data-ready="false">
+        <div class="lrow flex flex-col px-1 py-1.5 rounded hover:bg-gray-800" id="lr-construction">
           <div class="flex items-center gap-2">
             <button onclick="toggleLayer('construction')" class="leye w-6 h-6 flex items-center justify-center text-base" style="opacity:.35">👁</button>
             <span class="w-4 h-4 rounded-sm shrink-0" style="background:#FF4500;border:1.5px solid #FF4500"></span>
@@ -108,9 +109,9 @@
           <div class="lslider-row px-8"><input type="range" class="lslider" min="0" max="1" step="0.05" value="0.72" oninput="setLayerOpacity('construction',this.value)"></div>
         </div>
 
-        <div class="lrow flex flex-col px-1 py-1.5 rounded hover:bg-gray-800 cursor-pointer" id="lr-bt2022" data-ready="true">
+        <div class="lrow flex flex-col px-1 py-1.5 rounded hover:bg-gray-800" id="lr-bt2022">
           <div class="flex items-center gap-2">
-            <button onclick="toggleLayer('bt2022')" class="leye w-6 h-6 flex items-center justify-center text-base" style="opacity:.35">👁</button>
+            <button onclick="toggleLayer('bt2022')" class="leye w-6 h-6 flex items-center justify-center text-base" style="opacity:1">👁</button>
             <span class="w-4 h-4 rounded-sm shrink-0" style="background:transparent;border:2px dashed #FFA500"></span>
             <span class="text-gray-300 text-xs flex-1">BT2022 ref sites</span>
             <span class="text-gray-500 text-xs" id="lo-bt2022">80%</span>
@@ -121,25 +122,22 @@
       </div>
     </details>
 
-    <!-- ── Base Imagery ── -->
+    <!-- Base map -->
     <details open>
       <summary class="flex items-center justify-between py-1.5 cursor-pointer text-gray-400 hover:text-gray-200 text-xs font-semibold uppercase tracking-wider select-none">
-        <span>Base Imagery</span><span class="text-gray-500 text-base">›</span>
+        <span>Base Map</span><span class="text-gray-500 text-base">›</span>
       </summary>
       <div class="mt-1 space-y-0.5">
-
-        <label id="br-rgb-2024" class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-800 cursor-pointer opacity-40 pointer-events-none">
-          <input type="radio" name="base" value="rgb_2024" class="accent-orange-500" onchange="setBase('rgb_2024')">
-          <span class="text-gray-300 text-xs flex-1">RGB 2024</span>
+        <label class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-800 cursor-pointer">
+          <input type="radio" name="base" value="2024" class="accent-orange-500" checked onchange="setBase(2024)">
+          <span class="text-gray-300 text-xs flex-1">PDOK RGB 2024</span>
           <span class="text-gray-500 text-xs bg-gray-700 px-1.5 py-0.5 rounded">8 cm</span>
         </label>
-
-        <label id="br-rgb-2022" class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-800 cursor-pointer opacity-40 pointer-events-none">
-          <input type="radio" name="base" value="rgb_2022" class="accent-orange-500" onchange="setBase('rgb_2022')">
-          <span class="text-gray-300 text-xs flex-1">RGB 2022</span>
+        <label class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-800 cursor-pointer">
+          <input type="radio" name="base" value="2022" class="accent-orange-500" onchange="setBase(2022)">
+          <span class="text-gray-300 text-xs flex-1">PDOK RGB 2022</span>
           <span class="text-gray-500 text-xs bg-gray-700 px-1.5 py-0.5 rounded">8 cm</span>
         </label>
-
       </div>
     </details>
 
@@ -152,8 +150,7 @@
 </aside>
 
 <!-- ══════════ MAP ══════════ -->
-<div id="map" class="flex-1 h-screen">
-
+<div id="map" class="flex-1 h-screen relative">
   <div id="terrain-legend">
     <div style="color:#9ca3af;font-size:11px;font-weight:600;margin-bottom:6px">Terrain class</div>
     <div style="display:flex;flex-direction:column;gap:4px">
@@ -166,24 +163,44 @@
       <div style="display:flex;align-items:center;gap:6px"><div style="width:11px;height:11px;border-radius:3px;background:#505060;flex-shrink:0"></div><span style="color:#d1d5db;font-size:11px">unknown</span></div>
     </div>
   </div>
-
 </div>
 
 <script>
+// ── API base URL (works whether page is served by FastAPI or preview) ─────────
+const API = (window.location.port === '8001' || window.location.port === '8000')
+  ? '' : 'http://localhost:8001';
+
+// ── PDOK WMS base layers ──────────────────────────────────────────────────────
+const PDOK_WMS = 'https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0';
+
+const BASE_LAYERS = {
+  2024: L.tileLayer.wms(PDOK_WMS, {
+    layers: '2024_orthoHR', format: 'image/jpeg', transparent: false,
+    attribution: '© PDOK / Kadaster', maxZoom: 22, tileSize: 256,
+  }),
+  2022: L.tileLayer.wms(PDOK_WMS, {
+    layers: '2022_orthoHR', format: 'image/jpeg', transparent: false,
+    attribution: '© PDOK / Kadaster', maxZoom: 22, tileSize: 256,
+  }),
+};
+
 // ── Map init ──────────────────────────────────────────────────────────────────
-const map = L.map('map',{zoomControl:true,preferCanvas:false}).setView([52.15,5.28],8);
+const map = L.map('map', { zoomControl: true, preferCanvas: false })
+              .setView([52.15, 5.28], 8);
 
-// No default tile layer — we show the 2024 RGB overlay as base after analysis
-// Show a minimal dark basemap until then
-const DARK_BASE = L.tileLayer(
-  'https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:3857/{z}/{x}/{y}.png',
-  {maxZoom:20, attribution:'© PDOK / Kadaster', opacity:0.5}
-).addTo(map);
+BASE_LAYERS[2024].addTo(map);   // default: 2024
 
+function setBase(year) {
+  Object.values(BASE_LAYERS).forEach(l => { if (map.hasLayer(l)) map.removeLayer(l); });
+  BASE_LAYERS[year].addTo(map);
+}
+
+// ── Draw plugin ───────────────────────────────────────────────────────────────
 const drawLayer   = new L.FeatureGroup().addTo(map);
 const drawControl = new L.Control.Draw({
-  draw:{rectangle:true,polygon:false,polyline:false,marker:false,circle:false,circlemarker:false},
-  edit:{featureGroup:drawLayer}
+  draw: { rectangle: true, polygon: false, polyline: false,
+          marker: false, circle: false, circlemarker: false },
+  edit: { featureGroup: drawLayer },
 });
 map.addControl(drawControl);
 
@@ -195,178 +212,164 @@ map.on(L.Draw.Event.CREATED, e => {
 });
 
 // ── Layer state ───────────────────────────────────────────────────────────────
-const L_OBJ = { construction:null, segments:null, bt2022:null, rgb_2022:null, rgb_2024:null };
-const L_VIS = { construction:true, segments:true, bt2022:true, rgb_2022:false, rgb_2024:false };
-const L_OPA = { construction:.72, segments:.50, bt2022:.80, rgb_2022:1, rgb_2024:1 };
-
-let currentBase = null; // will be set to 'rgb_2024' after first analysis
+const L_OBJ = { segments: null, construction: null, bt2022: null };
+const L_VIS = { segments: true, construction: true, bt2022: true };
+const L_OPA = { segments: 0.50, construction: 0.72, bt2022: 0.80 };
 
 function toggleLayer(key) {
   L_VIS[key] = !L_VIS[key];
-  applyLayerVis(key);
-  updateEyeBtn(key);
-}
-function setLayerOpacity(key, val) {
-  L_OPA[key] = parseFloat(val);
-  const el = document.getElementById('lo-'+key.replace(/_/g,'-'));
-  if (el) el.textContent = Math.round(val*100)+'%';
-  if (L_OBJ[key] && L_VIS[key]) L_OBJ[key].setOpacity(L_OPA[key]);
-}
-function applyLayerVis(key) {
-  if (!L_OBJ[key]) return;
-  if (L_VIS[key]) { if (!map.hasLayer(L_OBJ[key])) map.addLayer(L_OBJ[key]); L_OBJ[key].setOpacity(L_OPA[key]); }
-  else { if (map.hasLayer(L_OBJ[key])) map.removeLayer(L_OBJ[key]); }
-}
-function updateEyeBtn(key) {
-  const row = document.getElementById('lr-'+key.replace(/_/g,'-'));
-  if (!row) return;
-  const btn = row.querySelector('.leye');
+  if (L_OBJ[key]) {
+    L_VIS[key] ? map.addLayer(L_OBJ[key]) : map.removeLayer(L_OBJ[key]);
+  }
+  const btn = document.querySelector(`#lr-${key} .leye`);
   if (btn) btn.style.opacity = L_VIS[key] ? '1' : '0.35';
 }
-function setBase(key) {
-  // Hide other base
-  ['rgb_2022','rgb_2024'].forEach(k => { if (L_OBJ[k] && map.hasLayer(L_OBJ[k])) map.removeLayer(L_OBJ[k]); });
-  currentBase = key;
-  if (L_OBJ[key]) { if (!map.hasLayer(L_OBJ[key])) map.addLayer(L_OBJ[key]); L_OBJ[key].setOpacity(1); }
-  // Hide dark base once we have real imagery
-  if (map.hasLayer(DARK_BASE)) map.removeLayer(DARK_BASE);
+
+function setLayerOpacity(key, val) {
+  L_OPA[key] = parseFloat(val);
+  const el = document.getElementById('lo-' + key);
+  if (el) el.textContent = Math.round(val * 100) + '%';
+  if (L_OBJ[key] && L_OBJ[key].setStyle) {
+    L_OBJ[key].setStyle({ fillOpacity: L_OPA[key] * 0.9, opacity: Math.min(1, L_OPA[key] * 1.5) });
+  }
 }
-function markReady(key) {
-  const brad = document.getElementById('br-'+key.replace(/_/g,'-'));
-  if (brad) brad.classList.remove('opacity-40','pointer-events-none');
-  const row = document.getElementById('lr-'+key.replace(/_/g,'-'));
-  if (row) row.setAttribute('data-ready','true');
+
+function markEye(key) {
+  const btn = document.querySelector(`#lr-${key} .leye`);
+  if (btn) btn.style.opacity = L_VIS[key] ? '1' : '0.35';
 }
 
 // ── Draw & Analyze ────────────────────────────────────────────────────────────
-function startDraw() { new L.Draw.Rectangle(map, drawControl.options.draw.rectangle).enable(); }
+function startDraw() {
+  new L.Draw.Rectangle(map, drawControl.options.draw.rectangle).enable();
+}
 
 async function runAnalyze() {
   if (!drawnBbox) { alert('Draw a bounding box first.'); return; }
   const btn = document.getElementById('btn-analyze');
   const msg = document.getElementById('progress-msg');
   btn.disabled = true; btn.textContent = '⏳ Analyzing…';
-  msg.textContent = 'Downloading imagery · running SAM2 · classifying…';
+  msg.textContent = 'Running SAM2 + classifier…';
   msg.classList.remove('hidden');
+
   const sw = drawnBbox.getSouthWest(), ne = drawnBbox.getNorthEast();
   try {
-    const resp = await fetch('/api/analyze-bbox', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({bbox_wgs84:[sw.lng,sw.lat,ne.lng,ne.lat]}),
+    const resp = await fetch(API + '/api/analyze-bbox', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bbox_wgs84: [sw.lng, sw.lat, ne.lng, ne.lat] }),
     });
     if (!resp.ok) throw new Error(await resp.text());
     const data = await resp.json();
     renderResults(data);
-    msg.textContent = `✓ Done — ${data.stats.total} segments · ${data.stats.construction} construction`;
-  } catch(e) {
-    msg.textContent = '✗ Error: '+e.message;
+    msg.textContent = `✓ ${data.stats.total} segments · ${data.stats.construction} construction`;
+  } catch (e) {
+    msg.textContent = '✗ ' + e.message;
   } finally {
     btn.disabled = false; btn.textContent = '▶ Analyze Area';
   }
 }
 
-// ── Render results ────────────────────────────────────────────────────────────
+// ── Render ────────────────────────────────────────────────────────────────────
 function renderResults(data) {
-  const drawBounds = L.latLngBounds(data.bounds[0], data.bounds[1]);
-  const tileLL     = L.latLngBounds(data.tile_bounds[0], data.tile_bounds[1]);
-  const ovs = data.overlays;
-
-  // Clear old layers
-  ['construction','segments','rgb_2022','rgb_2024'].forEach(k => {
-    if (L_OBJ[k]) { if (map.hasLayer(L_OBJ[k])) map.removeLayer(L_OBJ[k]); L_OBJ[k]=null; }
+  // Clear old result layers
+  ['segments', 'construction'].forEach(key => {
+    if (L_OBJ[key]) { map.removeLayer(L_OBJ[key]); L_OBJ[key] = null; }
   });
 
-  // RGB base overlays (placed at tile bounds)
-  ['rgb_2022','rgb_2024'].forEach(key => {
-    if (!ovs[key]) return;
-    L_OBJ[key] = L.imageOverlay(ovs[key], tileLL, {opacity:1, zIndex:100, interactive:false});
-    markReady(key);
-  });
+  const bounds = L.latLngBounds(data.bounds[0], data.bounds[1]);
 
-  // Default to RGB 2024 as base — select its radio button
-  if (L_OBJ['rgb_2024']) {
-    const radio = document.querySelector('input[name="base"][value="rgb_2024"]');
-    if (radio) radio.checked = true;
-    setBase('rgb_2024');
-  }
-
-  // SAM segments
-  L_OBJ['segments'] = L.geoJSON(data.segments, {
-    style: f => ({fillColor:f.properties.color, fillOpacity:.45, color:f.properties.color, weight:1.2, opacity:.85}),
+  // All segments
+  L_OBJ.segments = L.geoJSON(data.segments, {
+    style: f => ({
+      fillColor: f.properties.color,
+      fillOpacity: L_OPA.segments * 0.9,
+      color: f.properties.color,
+      weight: 1.2,
+      opacity: Math.min(1, L_OPA.segments * 1.6),
+    }),
     onEachFeature: (f, layer) => {
       layer.on('click', () => {
         const p = f.properties;
-        const pct = Math.round(p.construction_score*100);
+        const pct = Math.round(p.construction_score * 100);
         const dlt = p.ndvi_delta != null
-          ? (p.ndvi_delta>0.01 ? `▼${p.ndvi_delta.toFixed(2)} loss`
-            :p.ndvi_delta<-0.01?`▲${Math.abs(p.ndvi_delta).toFixed(2)} gain`:'≈ stable')
+          ? (p.ndvi_delta > 0.01 ? `▼${p.ndvi_delta.toFixed(2)} loss`
+            : p.ndvi_delta < -0.01 ? `▲${Math.abs(p.ndvi_delta).toFixed(2)} gain` : '≈ stable')
           : '—';
         layer.bindPopup(`<div class="seg-popup">
           <div class="ptitle" style="color:${p.color}">● ${p.terrain_label}</div>
           <div style="font-size:11px;color:#666;margin-bottom:3px">Score: ${pct}%</div>
           <div class="pbar-bg"><div class="pbar-fg" style="width:${pct}%;background:${p.color}"></div></div>
           <div class="pgrid">
-            <span class="plabel">NDVI 2022</span><span class="pval">${p.mean_ndvi_2022??'—'}</span>
-            <span class="plabel">NDVI 2024</span><span class="pval">${p.mean_ndvi_2024??'—'}</span>
+            <span class="plabel">NDVI 2022</span><span class="pval">${p.mean_ndvi_2022 ?? '—'}</span>
+            <span class="plabel">NDVI 2024</span><span class="pval">${p.mean_ndvi_2024 ?? '—'}</span>
             <span class="plabel">ΔNDVI</span><span class="pval">${dlt}</span>
-            <span class="plabel">NDBI 2024</span><span class="pval">${p.mean_ndbi_2024??'—'}</span>
-            <span class="plabel">Roughness</span><span class="pval">${p.depth_roughness??'—'}</span>
+            <span class="plabel">NDBI 2024</span><span class="pval">${p.mean_ndbi_2024 ?? '—'}</span>
+            <span class="plabel">Roughness</span><span class="pval">${p.depth_roughness ?? '—'}</span>
+            <span class="plabel">Green px</span><span class="pval">${p.green_fraction != null ? Math.round(p.green_fraction*100)+'%' : '—'}</span>
+            <span class="plabel">Uniform px</span><span class="pval">${p.uniform_fraction != null ? Math.round(p.uniform_fraction*100)+'%' : '—'}</span>
             <span class="plabel">Area</span><span class="pval">${p.area_px.toLocaleString()} px</span>
           </div>
-          ${p.top3_clip?`<div style="margin-top:5px;font-size:10px;color:#777;font-weight:600">TOP CLIP</div>
-          ${p.top3_clip.map((c,i)=>`<div class="pclip">${i===0?'▶':'·'} <b>${c.label}</b> ${Math.round(c.score*100)}%</div>`).join('')}`:''}
+          ${p.top3_clip ? `<div style="margin-top:5px;font-size:10px;color:#777;font-weight:600">TOP CLIP</div>
+          ${p.top3_clip.map((c, i) => `<div style="font-size:10px;color:#374151">${i===0?'▶':'·'} <b>${c.label}</b> ${Math.round(c.score*100)}%</div>`).join('')}` : ''}
         </div>`).openPopup();
       });
     },
   });
-  markReady('segments');
-  if (L_VIS['segments']) map.addLayer(L_OBJ['segments']);
+  if (L_VIS.segments) map.addLayer(L_OBJ.segments);
+  markEye('segments');
 
-  // Construction highlight
-  const cf = data.segments.features.filter(f=>f.properties.terrain_label==='likely construction terrain');
+  // Construction only highlight
+  const cf = data.segments.features.filter(
+    f => f.properties.terrain_label === 'likely construction terrain'
+  );
   if (cf.length) {
-    L_OBJ['construction'] = L.geoJSON(
-      {type:'FeatureCollection',features:cf},
-      {style:{fillColor:'#FF4500',fillOpacity:.70,color:'#FF4500',weight:2.5,opacity:1}}
+    L_OBJ.construction = L.geoJSON(
+      { type: 'FeatureCollection', features: cf },
+      { style: { fillColor: '#FF4500', fillOpacity: 0.65, color: '#FF4500', weight: 2.5, opacity: 1 } }
     );
-    markReady('construction');
-    if (L_VIS['construction']) map.addLayer(L_OBJ['construction']);
+    if (L_VIS.construction) map.addLayer(L_OBJ.construction);
   }
+  markEye('construction');
 
-  map.fitBounds(drawBounds, {padding:[20,20]});
-  Object.keys(L_VIS).forEach(updateEyeBtn);
+  map.fitBounds(bounds, { padding: [20, 20] });
 
   // Stats
-  document.getElementById('stats-panel').classList.remove('hidden');
   const labs = data.stats.labels || {};
+  document.getElementById('stats-panel').classList.remove('hidden');
   document.getElementById('stats-content').innerHTML =
     `<div class="flex justify-between"><span class="text-gray-400">Total segments</span><span class="font-semibold text-white">${data.stats.total}</span></div>
-     <div class="flex justify-between"><span class="text-orange-400">Construction sites</span><span class="font-semibold text-orange-400">${data.stats.construction}</span></div>`+
-    Object.entries(labs).map(([l,n])=>
+     <div class="flex justify-between"><span class="text-orange-400">Construction sites</span><span class="font-semibold text-orange-400">${data.stats.construction}</span></div>` +
+    Object.entries(labs).map(([l, n]) =>
       `<div class="flex justify-between"><span class="text-gray-500">${l}</span><span class="text-gray-300">${n}</span></div>`
     ).join('');
 }
 
 // ── BT2022 ────────────────────────────────────────────────────────────────────
-fetch('/api/bt2022').then(r=>r.json()).then(gj=>{
-  if (!gj.features||!gj.features.length) return;
-  L_OBJ['bt2022'] = L.geoJSON(gj, {
-    style:{fillColor:'#FFA500',fillOpacity:.08,color:'#FFA500',weight:1.5,dashArray:'4 4',opacity:.8},
-    onEachFeature:(f,layer)=>layer.bindPopup(`<b>BT2022</b><br>${f.properties.naam||''}`),
+fetch(API + '/api/bt2022').then(r => r.json()).then(gj => {
+  if (!gj.features?.length) return;
+  L_OBJ.bt2022 = L.geoJSON(gj, {
+    style: { fillColor: '#FFA500', fillOpacity: 0.08, color: '#FFA500',
+             weight: 1.5, dashArray: '4 4', opacity: 0.8 },
+    onEachFeature: (f, layer) => layer.bindPopup(`<b>BT2022</b><br>${f.properties.naam || ''}`),
   });
-  markReady('bt2022');
-  if (L_VIS['bt2022']) map.addLayer(L_OBJ['bt2022']);
-  updateEyeBtn('bt2022');
-}).catch(()=>{});
+  if (L_VIS.bt2022) map.addLayer(L_OBJ.bt2022);
+  markEye('bt2022');
+}).catch(() => {});
 
-function downloadGpkg() { window.open('/api/download/results.gpkg','_blank'); }
+function downloadGpkg() { window.open('/api/download/results.gpkg', '_blank'); }
 
+// ── Status poll ───────────────────────────────────────────────────────────────
 (function poll() {
-  fetch('/api/health').then(r=>r.json()).then(h=>{
+  fetch(API + '/api/health').then(r => r.json()).then(h => {
     const bar = document.getElementById('status-bar');
-    if (h.ready) { bar.textContent=`✓ Models ready · ${h.device}`; bar.style.color='#4ade80'; }
-    else { bar.textContent='⏳ Models loading…'; setTimeout(poll,4000); }
-  }).catch(()=>setTimeout(poll,5000));
+    if (h.ready) {
+      bar.textContent = `✓ Models ready · ${h.device}`;
+      bar.style.color = '#4ade80';
+    } else {
+      bar.textContent = '⏳ Models loading…';
+      setTimeout(poll, 4000);
+    }
+  }).catch(() => setTimeout(poll, 5000));
 })();
 </script>
 </body>

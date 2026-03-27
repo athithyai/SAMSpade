@@ -51,6 +51,25 @@ DEVICE: Optional[torch.device] = None
 MODEL_READY     = False
 LAST_GPKG: Optional[Path] = None
 
+# ── Segment classifier (trained on BT2022) ────────────────────────────────────
+import pickle as _pickle
+_CLASSIFIER   = None
+_CLF_FEAT_NAMES = None
+_CLF_PATH = Path(__file__).parent.parent / "checkpoints" / "segment_classifier.pkl"
+
+def _load_classifier() -> None:
+    global _CLASSIFIER, _CLF_FEAT_NAMES
+    if _CLF_PATH.exists():
+        with open(_CLF_PATH, "rb") as _f:
+            _p = _pickle.load(_f)
+        _CLASSIFIER   = _p["clf"]
+        _CLF_FEAT_NAMES = _p["feat_names"]
+        logger.info("Segment classifier loaded ← %s  (CV-AUC=%.3f  n_train=%d)",
+                    _CLF_PATH, _p["cv_roc_auc"], _p["n_train"])
+    else:
+        logger.info("No trained classifier found at %s — using heuristic scoring.", _CLF_PATH)
+
+
 CIR_WMS_URL = "https://service.pdok.nl/hwh/luchtfotocir/wms/v1_0"
 
 # ── CLIP labels ───────────────────────────────────────────────────────────────
@@ -165,6 +184,7 @@ def _load_model() -> None:
 async def startup() -> None:
     loop = asyncio.get_event_loop()
     loop.run_in_executor(concurrent.futures.ThreadPoolExecutor(max_workers=1), _load_model)
+    _load_classifier()
 
 
 # ── Request schema ────────────────────────────────────────────────────────────
@@ -439,6 +459,17 @@ def _construction_score(
     else:
         clip_s = 0.0
 
+        # ── Use trained classifier if available ──────────────────────────────────
+    if _CLASSIFIER is not None:
+        feat = np.array([
+            ndvi_22 if ndvi_22 is not None else 0.0,
+            ndvi_24 if ndvi_24 is not None else 0.0,
+            (ndvi_22 or 0.0) - (ndvi_24 or 0.0),
+            0.0,        # ndbi_24 not passed here — heuristic fallback
+            depth_var_24 * 1000 if depth_var_24 is not None else 0.0,
+        ] + (all_sims if all_sims else [0.0] * 14), dtype=np.float32).reshape(1, -1)
+        prob = float(_CLASSIFIER.predict_proba(feat)[0, 1])
+        return round(prob, 3)
     return round(0.25 * ndvi_abs + 0.30 * ndvi_delta + 0.20 * roughness + 0.25 * clip_s, 3)
 
 
@@ -448,18 +479,44 @@ def _assign_terrain_label(
     construction_score: float,
     ndvi_24: Optional[float],
     ndvi_22: Optional[float],
+    green_frac:   float = 0.0,
+    uniform_frac: float = 0.0,
+    grey_frac:    float = 0.0,
+    ndvi_delta:   Optional[float] = None,
 ) -> str:
     """Map fused scores → one of the 7 terrain classes.
 
-    Hard vegetation gate: if area is clearly green (high NDVI in 2024, or
-    green in BOTH years), it is labelled vegetation regardless of construction
-    score — prevents forests/parks from being mis-classified as construction.
+    Hard exclusion gates (priority order):
+      1. Green pixels > 40 %              → vegetation
+      2. NDVI spectral / temporal         → vegetation
+      3. Predominantly grey + stable NDVI → paved / railway
+      4. Uniform colour + low score       → roof / building
+      5. construction_score threshold     → likely construction terrain
+    Construction terrain must be: non-green, non-grey, non-uniform, disturbed.
     """
-    # ── Hard vegetation gate ──────────────────────────────────────────────────
+    stable = (ndvi_delta is not None and abs(ndvi_delta) < 0.08)
+
+    # ── Gate 1: green ─────────────────────────────────────────────────────────
+    if green_frac > 0.40:
+        return "vegetation"
+
+    # ── Gate 2: NDVI spectral / temporal ─────────────────────────────────────
     if ndvi_24 is not None and ndvi_24 > 0.35:
         return "vegetation"
     if (ndvi_22 is not None and ndvi_22 > 0.30) and (ndvi_24 is not None and ndvi_24 > 0.22):
         return "vegetation"
+
+    # ── Gate 3: grey + temporally stable → paved surface / railway ───────────
+    # Railways and roads are predominantly grey and haven't changed year-on-year.
+    if grey_frac > 0.55 and stable and construction_score < 0.60:
+        return "paved surface"
+    if grey_frac > 0.70 and construction_score < 0.65:
+        return "paved surface"
+
+    # ── Gate 4: uniform colour + low score → roof / building ─────────────────
+    # Rooftops are spectrally homogeneous. Construction terrain is mixed & rough.
+    if uniform_frac > 0.65 and construction_score < 0.55:
+        return "roof / building"
 
     # ── Strong construction signal ────────────────────────────────────────────
     if construction_score >= 0.60:
@@ -533,6 +590,79 @@ def _masks_to_gdf(masks_sorted: list, img_shape: tuple, tile_crs, tile_transform
 
 
 # ── Per-segment signal helpers ────────────────────────────────────────────────
+def _pixel_stats(img_np: np.ndarray, seg: np.ndarray, target_hw: tuple) -> dict:
+    """Compute RGB pixel statistics for a segment.
+
+    Returns:
+      green_frac   — fraction of pixels where G dominates (vegetation)
+      barren_frac  — fraction of pixels that are dull/earthy (bare soil/dirt)
+      uniform_frac — fraction of pixels near the segment mean (roof uniformity)
+    """
+    import cv2
+    H, W = target_hw
+    if img_np.shape[:2] != (H, W):
+        img_np = cv2.resize(img_np, (W, H), interpolation=cv2.INTER_LINEAR)
+    seg_r = (seg if seg.shape == (H, W)
+             else cv2.resize(seg.astype(np.uint8), (W, H),
+                             interpolation=cv2.INTER_NEAREST).astype(bool))
+    pixels = img_np[seg_r].astype(np.float32)
+    if len(pixels) == 0:
+        return {"green_frac": 0.0, "barren_frac": 0.0, "uniform_frac": 0.0}
+
+    r, g, b = pixels[:, 0], pixels[:, 1], pixels[:, 2]
+
+    # Green-dominant pixels (vegetation)
+    green_px   = (g > r * 1.05) & (g > b * 1.05) & (g > 40)
+
+    brightness = (r + g + b) / 3.0
+    max_ch     = np.maximum(np.maximum(r, g), b)
+    min_ch     = np.minimum(np.minimum(r, g), b)
+    saturation = (max_ch - min_ch) / (max_ch + 1e-6)   # 0=grey, 1=vivid
+
+    # Barren/earthy: low-moderate saturation, middling brightness, not green
+    # Captures exposed soil, gravel, sand, aggregate — what construction terrain looks like
+    barren_px = (saturation < 0.30) & (brightness > 30) & (brightness < 210) & (~green_px)
+
+    # Grey pixels: very low saturation — asphalt, concrete, railway ballast, metal roofs
+    grey_px = (saturation < 0.12) & (brightness > 20)
+
+    # Uniform pixels: each channel within 20 of segment mean — solid-colour rooftops
+    mean_r, mean_g, mean_b = r.mean(), g.mean(), b.mean()
+    uniform_px = (
+        (np.abs(r - mean_r) < 20) & (np.abs(g - mean_g) < 20) & (np.abs(b - mean_b) < 20)
+    )
+
+    n = len(pixels)
+    return {
+        "green_frac":   float(green_px.sum()   / n),
+        "barren_frac":  float(barren_px.sum()  / n),
+        "grey_frac":    float(grey_px.sum()     / n),
+        "uniform_frac": float(uniform_px.sum() / n),
+    }
+
+
+def _green_fraction(img_np: np.ndarray, seg: np.ndarray, target_hw: tuple) -> float:
+    """Fraction of segment pixels where green channel dominates (RGB vegetation indicator).
+
+    A pixel is 'green' when:
+      G > R * 1.05  AND  G > B * 1.05  AND  G > 40
+    This catches grass, trees, crops in standard RGB aerial imagery.
+    """
+    import cv2
+    H, W = target_hw
+    if img_np.shape[:2] != (H, W):
+        img_np = cv2.resize(img_np, (W, H), interpolation=cv2.INTER_LINEAR)
+    seg_r = (seg if seg.shape == (H, W)
+             else cv2.resize(seg.astype(np.uint8), (W, H),
+                             interpolation=cv2.INTER_NEAREST).astype(bool))
+    pixels = img_np[seg_r].astype(np.float32)   # N × 3 (R, G, B)
+    if len(pixels) == 0:
+        return 0.0
+    r, g, b = pixels[:, 0], pixels[:, 1], pixels[:, 2]
+    green_px = (g > r * 1.05) & (g > b * 1.05) & (g > 40)
+    return float(green_px.sum() / len(pixels))
+
+
 def _mask_mean(signal: np.ndarray, seg: np.ndarray, target_hw: tuple) -> float:
     import cv2
     H, W = target_hw
@@ -632,10 +762,7 @@ def _run_analyze_bbox(bbox_rd: tuple) -> dict:
         for year in (2022, 2024):
             ndbi[year] = _compute_ndbi(cir[year], target_hw) if cir[year] is not None else None
 
-        # Only send RGB overlays to frontend — derived overlays removed from UI
-        overlays: dict[str, Optional[str]] = {}
-        for year in (2022, 2024):
-            overlays[f"rgb_{year}"] = _img_to_b64(rgb[year]) if rgb[year] is not None else None
+        # No image overlays — frontend uses live PDOK WMS tile layers as basemap
 
         # ── 6. SAM2 dense auto-segment on 2024 ───────────────────────────────
         logger.info("SAM2 auto-segment 2024 (%dx%d) …", H, W)
@@ -704,10 +831,21 @@ def _run_analyze_bbox(bbox_rd: tuple) -> dict:
             ndbi_24 = (round(_mask_mean(ndbi[2024], seg, target_hw), 3)
                        if ndbi[2024] is not None else None)
 
+            # RGB pixel statistics — green / barren / grey / uniform fractions
+            pstats       = _pixel_stats(img_2024, seg, target_hw)
+            green_frac   = round(pstats["green_frac"],   3)
+            barren_frac  = round(pstats["barren_frac"],  3)
+            grey_frac    = round(pstats["grey_frac"],    3)
+            uniform_frac = round(pstats["uniform_frac"], 3)
+            ndvi_delta_v = round((ndvi_22 or 0.0) - (ndvi_24 or 0.0), 3) if ndvi_22 and ndvi_24 else None
+
             # Scores — temporal-aware
             cs      = _construction_score(cr.get("all_sims", []), ndvi_24, ndvi_22,
                                           depth_var, depth_var_22)
-            terrain = _assign_terrain_label(cr.get("all_sims", []), cs, ndvi_24, ndvi_22)
+            terrain = _assign_terrain_label(
+                cr.get("all_sims", []), cs, ndvi_24, ndvi_22,
+                green_frac, uniform_frac, grey_frac, ndvi_delta_v
+            )
             color   = TERRAIN_COLORS.get(terrain, "#666666")
             top3    = [{"label": CLIP_LABELS[i], "score": round(float(s), 3)}
                        for i, s in zip(cr["top_idx"], cr["top_scores"])]
@@ -723,6 +861,10 @@ def _run_analyze_bbox(bbox_rd: tuple) -> dict:
                 "mean_ndbi_2024":     ndbi_24,
                 "depth_mean":         depth_mean,
                 "depth_roughness":    depth_var,
+                "green_fraction":     green_frac,
+                "barren_fraction":    barren_frac,
+                "grey_fraction":      grey_frac,
+                "uniform_fraction":   uniform_frac,
                 "area_px":            int(mdata["area"]),
                 "top3_clip":          top3,
                 "predicted_iou":      round(float(mdata.get("predicted_iou", 0)), 3),
@@ -752,18 +894,13 @@ def _run_analyze_bbox(bbox_rd: tuple) -> dict:
             LAST_GPKG = gpkg_out
             logger.info("GeoPackage → %s", gpkg_out)
 
-        # Original drawn bbox (WGS84) — used for fitBounds + segment clip
-        west,  south,  east,  north  = _to_wgs84_bounds(original_bbox_rd)
-        # Expanded tile bbox (WGS84) — used to place image overlays correctly
-        tw, ts, te, tn               = _to_wgs84_bounds(bbox_rd_exp)
+        west, south, east, north = _to_wgs84_bounds(original_bbox_rd)
         n_constr = sum(1 for f in features_json
                        if f["properties"]["terrain_label"] == "likely construction terrain")
 
         return {
-            "bounds":      [[south, west], [north, east]],  # drawn area, for fitBounds
-            "tile_bounds": [[ts,    tw],   [tn,    te]],    # expanded tile, for image overlays
-            "overlays":    overlays,
-            "segments":    {"type": "FeatureCollection", "features": features_json},
+            "bounds":   [[south, west], [north, east]],
+            "segments": {"type": "FeatureCollection", "features": features_json},
             "stats": {
                 "total":        len(features_json),
                 "construction": n_constr,
