@@ -4,7 +4,7 @@
 
 **Construction-terrain detection from aerial imagery — Netherlands**
 
-Draw a bounding box anywhere in the Netherlands. Get dense SAM2 segments classified as construction, vegetation, paved, roof, water, or bare soil — overlaid on live PDOK aerial imagery.
+Draw a bounding box anywhere in the Netherlands. Get dense SAM2 segments classified as construction, vegetation, paved, roof, water, or bare soil - overlaid on live PDOK aerial imagery.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.11+-EE4C2C?style=flat-square&logo=pytorch)](https://pytorch.org)
@@ -114,7 +114,7 @@ Models load on startup (~60–90 sec). The status bar turns green when ready.
 
 ## Train the segment classifier
 
-The construction classifier is trained on **BT2022.gpkg** — 3 664 confirmed construction-site polygons from the Dutch Building and Land-use Register.
+The construction classifier is trained on **BT2022.gpkg** — 3664 confirmed construction-site polygons from the Dutch Building and Land-use Register.
 
 ```bash
 conda activate construction
